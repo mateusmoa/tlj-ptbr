@@ -1,0 +1,7 @@
+{
+  "name": "The Longest Journey",
+  "author": "Nateus009",
+  "version": "0.1.3",
+  "description": "Game support for The Longest Journey (Steam/GOG). Installs mods to the game folder and applies .tljpatch translation patches (e.g. Brazilian Portuguese) on top of the player's own game files.",
+  "gameId": 10468
+}

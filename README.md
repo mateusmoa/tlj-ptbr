@@ -58,6 +58,9 @@ Para abrir no ScummVM, a extensão:
 
 O botão "ScummVM" da aba Mods escolhe entre Automático, sempre ScummVM ou sempre game.exe.
 
+Idioma: as mensagens da extensão saem em português quando o Vortex está em português, ou quando ele está no
+padrão (inglês) e o Windows está em português; nos outros casos, em inglês.
+
 Versões da extensão: a partir da 0.2.5 o `info.json` tem `"id": "game-thelongestjourney"`, então cada versão nova
 instalada (pelo Nexus ou por "Install From File") substitui a anterior. Até a 0.2.4 não tinha `id` e cada zip com
 nome diferente virava outra pasta em `plugins`; o Vortex carregava todas juntas. A 0.2.5 acha essas cópias antigas

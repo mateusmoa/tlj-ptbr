@@ -1,7 +1,8 @@
 {
+  "id": "game-thelongestjourney",
   "name": "The Longest Journey",
   "author": "Nateus009",
-  "version": "0.1.3",
-  "description": "Game support for The Longest Journey (Steam/GOG). Installs mods to the game folder and applies .tljpatch translation patches (e.g. Brazilian Portuguese) on top of the player's own game files.",
+  "version": "0.2.5",
+  "description": "Game support for The Longest Journey (Steam/GOG). Installs mods to the game folder and ScummVM mods such as TLJ HD, its FMV packs and HD Characters, applies .tljpatch translations (e.g. Brazilian Portuguese) and starts the game in ScummVM when the enabled mods need it, downloading and configuring ScummVM if needed.",
   "gameId": 10468
 }

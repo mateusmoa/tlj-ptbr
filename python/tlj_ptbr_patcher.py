@@ -16,6 +16,12 @@ Uso:
   python3 tlj_ptbr_patcher.py --jogo "/caminho/The Longest Journey"
   python3 tlj_ptbr_patcher.py --desinstalar
   python3 tlj_ptbr_patcher.py --verificar           (só confere, não altera nada)
+  python3 tlj_ptbr_patcher.py --scummvm             (para jogar no ScummVM / TLJ HD Mod)
+
+ScummVM: ele só reconhece o jogo com o chapters.ini ORIGINAL na pasta do jogo.
+Com --scummvm o original fica (ou volta) na pasta do jogo e o traduzido vai para
+mods/TLJ_PTBR, de onde o ScummVM lê os nomes dos capítulos: tudo em português.
+Sem --scummvm, para o game.exe.
 """
 import argparse
 import gzip
@@ -414,19 +420,81 @@ def check_vortex(game, entries):
     return False
 
 
-def install(game, patch_path, dry=False):
+CHAPTERS = "chapters.ini"
+# no modo ScummVM o chapters.ini traduzido fica aqui: o ScummVM reconhece o jogo pelo original da
+# pasta do jogo, mas depois lê os arquivos de mods/ antes dos do jogo (nomes dos capítulos em PT)
+SCUMMVM_CHAPTERS = "mods/TLJ_PTBR/chapters.ini"
+
+
+def chapters_warning():
+    say("\nATENÇÃO: o chapters.ini do jogo não é o original e não há cópia dele no backup,")
+    say("então o ScummVM não vai reconhecer o jogo. Na Steam: Propriedades > Arquivos")
+    say("instalados > Verificar integridade (GOG: Gerenciar > Verificar/Reparar) e rode de")
+    say("novo com --scummvm.")
+
+
+def backup_once(bdir, rel, p):
+    """Guarda o arquivo atual (só na primeira vez) antes de alterá-lo; se ele não existia, marca."""
+    bpath = os.path.join(bdir, *rel.split("/"))
+    if os.path.exists(bpath) or os.path.exists(bpath + ".nao_existia"):
+        return
+    os.makedirs(os.path.dirname(bpath), exist_ok=True)
+    if os.path.isfile(p):
+        shutil.copy2(p, bpath)
+    else:
+        open(bpath + ".nao_existia", "wb").close()
+
+
+def prune_empty(d, stop):
+    """Apaga as pastas vazias de d até (sem incluir) stop."""
+    stop = os.path.normcase(os.path.abspath(stop))
+    d = os.path.abspath(d)
+    while os.path.normcase(d) != stop and os.path.normcase(d).startswith(stop):
+        try:
+            os.rmdir(d)
+        except OSError:
+            break
+        d = os.path.dirname(d)
+
+
+def install(game, patch_path, dry=False, scummvm=False):
     version, title, entries = read_patch(patch_path)
     say("%s  (versão %s)" % (title, version))
     say("Pasta do jogo: %s" % game)
+    if scummvm:
+        say("Modo ScummVM: o chapters.ini original fica na pasta do jogo (o ScummVM precisa")
+        say("dele para reconhecer o jogo) e o traduzido vai para mods/TLJ_PTBR, de onde o")
+        say("ScummVM lê os nomes dos capítulos.")
     if check_vortex(game, entries):
         say("\nATENÇÃO: há arquivos .vortex_backup nesta pasta: o Vortex está gerenciando")
         say("mods deste jogo. Instale/desinstale a tradução pelo Vortex para não misturar.")
         return 2
+    bdir = os.path.join(game, BACKUP_DIR)
+    mod_marker = os.path.join(bdir, *SCUMMVM_CHAPTERS.split("/")) + ".nao_existia"
     # fase 1: confere tudo antes de mexer em qualquer arquivo
     say("\nConferindo %d arquivos..." % len(entries))
     plan, missing, bad = [], [], []
+    ch_restore, ch_warn = None, False
+    ch_mod, ch_mod_del = None, None
     for i, e in enumerate(entries):
         p = resolve_ci(game, e.path)
+        if e.kind == KIND_FILE and e.path.lower() == CHAPTERS:
+            mp = resolve_ci(game, SCUMMVM_CHAPTERS)
+            mcur = open(mp, "rb").read() if os.path.isfile(mp) else None
+            if scummvm:
+                cur = open(p, "rb").read() if os.path.isfile(p) else None
+                if cur is None or sha1(cur) != e.sha_en:
+                    bk = os.path.join(bdir, CHAPTERS)
+                    orig = open(bk, "rb").read() if os.path.isfile(bk) else None
+                    if orig is not None and sha1(orig) == e.sha_en:
+                        ch_restore = (p, orig)        # estava traduzido: volta o original do backup
+                    else:
+                        ch_warn = True
+                if mcur != e.content:
+                    ch_mod = (mp, e.content)
+                continue
+            if mcur == e.content and os.path.exists(mod_marker):
+                ch_mod_del = mp                       # sobrou de uma instalação --scummvm
         if e.kind == KIND_XARC and not os.path.isfile(p):
             missing.append(e.path)
             continue
@@ -454,12 +522,19 @@ def install(game, patch_path, dry=False):
         counts[st] = counts.get(st, 0) + 1
     if dry:
         say("\nTudo certo para instalar: %s" % counts)
+        if ch_restore:
+            say("(o chapters.ini original voltaria do backup, para o ScummVM)")
+        if ch_mod:
+            say("(o chapters.ini traduzido iria para %s)" % SCUMMVM_CHAPTERS)
+        if ch_warn:
+            chapters_warning()
         return 0
-    if counts.get("ja_instalado", 0) == len(plan):
+    if counts.get("ja_instalado", 0) == len(plan) and not (ch_restore or ch_mod or ch_mod_del):
         say("\nA tradução (esta versão) já está instalada. Nada a fazer.")
+        if ch_warn:
+            chapters_warning()
         return 0
     # fase 2: backup + escrita
-    bdir = os.path.join(game, BACKUP_DIR)
     os.makedirs(bdir, exist_ok=True)
     log = []
     say("\nInstalando...")
@@ -469,25 +544,39 @@ def install(game, patch_path, dry=False):
             continue
         buf = open(p, "rb").read() if os.path.isfile(p) else None
         out, st, oth = apply_entry(buf, e)
-        bpath = os.path.join(bdir, *e.path.split("/"))
-        if buf is not None and not os.path.exists(bpath):
-            os.makedirs(os.path.dirname(bpath), exist_ok=True)
-            shutil.copy2(p, bpath)
-        elif buf is None and not os.path.exists(bpath + ".nao_existia"):
-            os.makedirs(os.path.dirname(bpath), exist_ok=True)
-            open(bpath + ".nao_existia", "wb").close()
+        backup_once(bdir, e.path, p)
         write_atomic(p, out)
         log.append("%s\t%s" % (e.path, st))
         if (i + 1) % 25 == 0:
             say("  %d/%d" % (i + 1, len(plan)))
+    if ch_restore:
+        write_atomic(ch_restore[0], ch_restore[1])
+        log.append("%s\toriginal_scummvm" % CHAPTERS)
+    if ch_mod:
+        backup_once(bdir, SCUMMVM_CHAPTERS, ch_mod[0])
+        os.makedirs(os.path.dirname(ch_mod[0]), exist_ok=True)
+        write_atomic(ch_mod[0], ch_mod[1])
+        log.append("%s\ttraduzido_scummvm" % SCUMMVM_CHAPTERS)
+    if ch_mod_del:
+        os.remove(ch_mod_del)
+        prune_empty(os.path.dirname(ch_mod_del), game)
+        os.remove(mod_marker)
+        prune_empty(os.path.dirname(mod_marker), bdir)
     with open(os.path.join(bdir, MANIFEST), "w", encoding="utf-8") as f:
         f.write("versao\t%s\n" % version)
+        f.write("modo\t%s\n" % ("scummvm" if scummvm else "game.exe"))
         f.write("\n".join(log) + "\n")
     div = sum(1 for _, _, st, _ in plan if st == "divergente")
     say("\nPronto! Tradução instalada: %s" % counts)
     if div:
         say("Obs.: %d arquivo(s) já estavam modificados por outra versão da tradução;" % div)
         say("os textos foram atualizados mesmo assim.")
+    if ch_restore:
+        say("chapters.ini original restaurado na pasta do jogo (o ScummVM reconhece o jogo).")
+    if ch_mod:
+        say("chapters.ini traduzido em %s (nomes dos capítulos no ScummVM)." % SCUMMVM_CHAPTERS)
+    if ch_warn:
+        chapters_warning()
     say("Backup dos arquivos anteriores em: %s" % bdir)
     return 0
 
@@ -517,6 +606,7 @@ def uninstall(game, patch_path=None):
                 dst = resolve_ci(game, rel)
                 if os.path.isfile(dst):
                     os.remove(dst)
+                    prune_empty(os.path.dirname(dst), game)    # ex.: mods/TLJ_PTBR vazia
                 restored += 1
                 continue
             dst = resolve_ci(game, rel)
@@ -542,6 +632,8 @@ def main():
     ap.add_argument("--patch", help="arquivo .tljpatch (padrão: ao lado deste script)")
     ap.add_argument("--desinstalar", action="store_true", help="restaura os arquivos originais")
     ap.add_argument("--verificar", action="store_true", help="só confere, não altera nada")
+    ap.add_argument("--scummvm", action="store_true",
+                    help="para jogar no ScummVM (ex.: TLJ HD Mod): mantém o chapters.ini original")
     a = ap.parse_args()
     game = a.jogo or find_game()
     if not game:
@@ -560,7 +652,7 @@ def main():
         say("Não encontrei o arquivo %s ao lado do instalador." % PATCH_NAME)
         return 1
     try:
-        return install(game, patch, dry=a.verificar)
+        return install(game, patch, dry=a.verificar, scummvm=a.scummvm)
     except PatchError as ex:
         say("Erro: %s" % ex)
         return 1

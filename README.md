@@ -12,8 +12,9 @@ aplica esse patch nos arquivos originais do próprio jogador.
 | Pasta | O que é |
 |---|---|
 | `instalador-windows/` | `Instalador.cs`: código-fonte do `Instalar_Traducao_PTBR.exe` (console, .NET Framework 4). `compilar.bat` compila com o compilador que já vem no Windows. |
-| `python/` | `tlj_ptbr_patcher.py`: o mesmo instalador em Python (Linux, Steam Deck, Mac), com a opção `--scummvm`. `gerar_patch.py`: gera o `.tljpatch` a partir de uma build traduzida completa. |
-| `extensao-vortex/` | Extensão do Vortex para o jogo (Steam 6310 / GOG 1207658794): instala mods na pasta do jogo, mods do ScummVM como o TLJ HD Mod e aplica `.tljpatch`. |
+| `python/` | `tlj_ptbr_patcher.py`: o mesmo instalador em Python (Linux, Steam Deck, Mac), com a opção `--scummvm`. `gerar_patch.py`: gera o `.tljpatch` a partir de uma build traduzida completa. `gerar_build_copia_e_cola.py`: monta a build a partir da planilha. |
+| `extensao-vortex/` | Extensão do Vortex para o jogo (Steam 6310 / GOG 1207658794): instala mods na pasta do jogo, mods do ScummVM como o TLJ HD Mod e aplica `.tljpatch`. Desde a 0.3.0 converte os saves do jogo original para o ScummVM. |
+| `ferramentas-saves/` | Conversor de saves (jogo original ↔ ScummVM, com opções de slot) e editor de saves (inventário, variáveis da história, comparar). Python 3 + tkinter; veja o `LEIA-ME.txt`. |
 | `docs/` | Especificação do formato `.tljpatch`. |
 
 ## O que o instalador faz

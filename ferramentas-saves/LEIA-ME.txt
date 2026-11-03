@@ -1,0 +1,58 @@
+CONVERSOR E EDITOR DE SAVES - THE LONGEST JOURNEY (jogo original / ScummVM)  v1.0
+==================================================================================
+
+Precisa do Python 3 (https://www.python.org/downloads/ - marque "Add python.exe to PATH").
+
+CONVERSOR - JEITO FÁCIL (janela)
+  Dê dois cliques em "Abrir_Conversor (janela).bat" (ou no Conversor_de_Saves.pyw).
+  1. Escolha a direção: Jogo original -> ScummVM, ou ScummVM -> Jogo original.
+  2. Confira a pasta do jogo (onde ficam o game.exe e o x.xarc) e as pastas de origem/destino.
+  3. A lista mostra cada save e para qual slot ele vai. Marque/desmarque o que quiser.
+  4. Clique em Converter. Nada é gravado antes disso.
+
+  Regra padrão: os convertidos começam uma página vazia depois do seu último save
+  (9 saves por página), em sequência, sem nunca substituir um save que já existe.
+
+OPÇÕES AVANÇADAS (marque "Opções avançadas")
+  Aba Slots
+    - Depois do último save (escolha quantas páginas vazias e quantos saves por página)
+    - Começar logo depois do último save (sem pular nada)
+    - Preencher os espaços vazios
+    - No primeiro ou no último espaço vazio que comporte toda a conversão
+      (ex.: 5 saves + 4 vazios + 1 save precisam de 10 slots livres seguidos)
+    - A partir de um slot que você escolhe
+    - Mesmo número da origem, com deslocamento (ex.: Save05 -> slot 105 com deslocamento 100)
+    - Manter os espaços vazios que havia entre os saves de origem
+    - Começar no primeiro slot de uma página / Não passar do slot X
+    - Se o slot já existir: próximo livre, pular ou substituir (com cópia em _backup_...)
+  Aba Ordem
+    - Por número do save, data ou nome; inverter a ordem
+  Aba Nomes e datas
+    - Nome do save: {nome} {slot} {origem} {data} {local}  (ex.: "{nome} (convertido)")
+    - Data original ou a de agora
+    - ID do jogo no ScummVM (padrão tlj-win)
+    - Jogo original: gravar o nome no Index.dat
+
+LINHA DE COMANDO
+  Converter_Saves_para_ScummVM.bat           original -> ScummVM
+  Converter_Saves_ScummVM_para_Original.bat  ScummVM -> original
+  Opções: python converter_saves_tlj.py --help  (use --simular para só ver o plano)
+
+AVISOS
+  - ScummVM -> jogo original é novo: teste num save antes. O jogo original só tem
+    100 slots (Save00 a Save99); se não couber depois do último, usa os livres.
+  - Alguns detalhes visuais (ex.: uma fala tocando no momento do save) não passam
+    entre os formatos; o estado do jogo, inventário e diário passam.
+
+EDITOR DE SAVES
+  Dê dois cliques em "Abrir_Editor (janela).bat" (ou no Editor_de_Saves.pyw).
+  Abre saves do jogo original (SaveNN.tlj) e do ScummVM (tlj-win-NNN.tlj).
+  - Resumo: lugar do jogo, formato, renomear o save.
+  - Inventário: adicionar/remover qualquer item do jogo e mudar a ordem.
+  - Variáveis da história: todas as variáveis (sim/não e números) de cada lugar,
+    com busca. Duplo clique muda o valor.
+  - Comparar: mostra só o que mudou entre dois saves (ótimo para descobrir o que
+    cada variável faz). Duplo clique copia o valor do save B para o aberto.
+  Ao salvar, o editor confere o save inteiro com os arquivos do jogo; se algo não
+  bater, nada é gravado. O original vai para a pasta _backup_editor.
+  Mudar variáveis da história pode travar a sequência do jogo: teste numa cópia.

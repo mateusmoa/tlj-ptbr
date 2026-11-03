@@ -13,8 +13,13 @@
  *  - ScummVM automático: com mods do ScummVM ativos, o botão Jogar abre o jogo no
  *    ScummVM (acha ou baixa o ScummVM oficial, cadastra o jogo e, se a tradução
  *    trocou o chapters.ini, usa uma pasta-sombra com o original, que é por onde o
- *    ScummVM reconhece o jogo).
- *  - mensagens em inglês, ou em português quando o Vortex ou o Windows está em português.
+ *    ScummVM reconhece o jogo). O botão "ScummVM" da aba Mods mostra onde ficam os saves
+ *    e remove o ScummVM que o Vortex baixou (sem tocar nos saves nem nos arquivos do jogo). Na primeira
+ *    vez no ScummVM, avisa que os saves do jogo original não abrem nele (formatos diferentes) e
+ *    oferece converter cópias deles para o ScummVM (saveconv.js); os originais não mudam.
+ *  - mensagens em 15 idiomas (locales/): alemão, chinês simplificado, coreano, espanhol,
+ *    francês, holandês, húngaro, inglês, italiano, norueguês, polonês, português do Brasil,
+ *    russo, sueco e tcheco.
  *
  * Sem dependências externas; código aberto e legível de propósito.
  * Licença: GPL-3.0
@@ -40,8 +45,9 @@ const BACKUP_TAG = '.vortex_backup';      // nome que o Vortex dá aos originais
 const OUT_DIR = '__tlj_gerado';
 
 // ---------------------------------------------------------------- idioma das mensagens
-// Português quando o Vortex está em português ou quando ele está no padrão (inglês) e o Windows está em
-// português; inglês nos outros casos. tr('texto em português', 'English text') devolve o do idioma atual.
+// O idioma do Vortex tem prioridade; no padrão inglês, mantém a preferência pelo idioma do sistema.
+const { pickLanguage, translate } = require('./i18n');
+let saveconv = require('./saveconv');   // conversor de saves do jogo original -> ScummVM
 let apiRef;   // api do Vortex (definida em main), para ler o idioma escolhido nas configurações
 
 function vortexLanguage() {
@@ -60,16 +66,7 @@ function systemLocale() {
   try { return Intl.DateTimeFormat().resolvedOptions().locale || ''; } catch (err) { return ''; }
 }
 
-/** 'pt' ou 'en', a partir do idioma do Vortex ("en" é o padrão dele) e do idioma do sistema */
-function pickLanguage(vortexLang, sysLocale) {
-  const is = (v, code) => typeof v === 'string' && new RegExp(`^${code}([-_.@]|$)`, 'i').test(v.trim());
-  if (typeof vortexLang === 'string' && vortexLang.trim() !== '' && !is(vortexLang, 'en')) {
-    return is(vortexLang, 'pt') ? 'pt' : 'en';
-  }
-  return is(sysLocale, 'pt') ? 'pt' : 'en';
-}
-
-const tr = (pt, en) => (pickLanguage(vortexLanguage(), systemLocale()) === 'pt' ? pt : en);
+const tr = (key, values) => translate(pickLanguage(vortexLanguage(), systemLocale()), key, values);
 
 // ---------------------------------------------------------------- formato .tljpatch
 const MAGIC = Buffer.from('TLJPTBR\u0001', 'latin1');
@@ -99,18 +96,18 @@ const sha1 = (buf) => crypto.createHash('sha1').update(buf).digest();
 function readPatch(raw) {
   let d = raw;
   if (raw.length >= 2 && raw[0] === 0x1f && raw[1] === 0x8b) {   // versões antigas vinham em gzip
-    try { d = zlib.gunzipSync(raw); } catch (err) { throw new PatchError(tr('arquivo .tljpatch corrompido', 'corrupted .tljpatch file')); }
+    try { d = zlib.gunzipSync(raw); } catch (err) { throw new PatchError(tr('patchCorrupted')); }
   }
   let o = 0;
   const take = (n) => {
-    if (o + n > d.length) throw new PatchError(tr('arquivo .tljpatch truncado', 'truncated .tljpatch file'));
+    if (o + n > d.length) throw new PatchError(tr('patchTruncated'));
     const b = d.subarray(o, o + n); o += n; return b;
   };
   const u8 = () => take(1)[0];
   const u16 = () => take(2).readUInt16LE(0);
   const u32 = () => take(4).readUInt32LE(0);
   const s16 = () => take(u16()).toString('utf8');
-  if (!take(8).equals(MAGIC)) throw new PatchError(tr('formato de patch desconhecido', 'unknown patch format'));
+  if (!take(8).equals(MAGIC)) throw new PatchError(tr('patchUnknown'));
   const patch = { version: s16(), title: s16(), entries: [] };
   const n = u32();
   for (let i = 0; i < n; i++) {
@@ -128,7 +125,7 @@ function readPatch(raw) {
     } else if (e.kind === KIND_FILE) {
       e.shaEn = take(20); e.shaOut = take(20); e.content = take(u32());
     } else {
-      throw new PatchError(tr('tipo de entrada desconhecido no patch', 'unknown entry type in the patch'));
+      throw new PatchError(tr('entryUnknown'));
     }
     patch.entries.push(e);
   }
@@ -142,14 +139,14 @@ function parseNodes(x) {
   while (stack.length > 0) {
     if (stack[stack.length - 1] === 0) { stack.pop(); continue; }
     stack[stack.length - 1] -= 1;
-    if (o + 6 > x.length) throw new PatchError(tr('árvore .xrc truncada', 'truncated .xrc tree'));
+    if (o + 6 > x.length) throw new PatchError(tr('xrcTruncated'));
     const nameOff = o + 4;
     const nameLen = x.readUInt16LE(nameOff);
     const dataOff = nameOff + 2 + nameLen;
-    if (dataOff + 4 > x.length) throw new PatchError(tr('árvore .xrc truncada', 'truncated .xrc tree'));
+    if (dataOff + 4 > x.length) throw new PatchError(tr('xrcTruncated'));
     const dataLen = x.readUInt32LE(dataOff);
     o = dataOff + 4 + dataLen;
-    if (o + 4 > x.length) throw new PatchError(tr('árvore .xrc truncada', 'truncated .xrc tree'));
+    if (o + 4 > x.length) throw new PatchError(tr('xrcTruncated'));
     const nch = x.readUInt16LE(o);
     o += 4;
     nodes.push({ type: x[nameOff - 4], sub: x[nameOff - 3], nameOff, nameLen, dataOff, dataLen });
@@ -167,13 +164,13 @@ function applyXarc(buf, e) {
   const h = sha1(buf);
   if (h.equals(e.shaOut) && buf.length === e.sizeOut) return { data: buf, status: 'ja_instalado', others: 0 };
   const isOrig = h.equals(e.shaEn) && buf.length === e.sizeEn;
-  if (buf.length < 12) throw new PatchError(tr('arquivo .xarc muito pequeno', '.xarc file too small'));
+  if (buf.length < 12) throw new PatchError(tr('xarcTooSmall'));
   const version = buf.readUInt32LE(0), num = buf.readUInt32LE(4), first = buf.readUInt32LE(8);
   const members = [];
   let o = 12;
   for (let i = 0; i < num; i++) {
     const z = buf.indexOf(0, o);
-    if (z < 0 || z + 9 > buf.length) throw new PatchError(tr('tabela do .xarc inconsistente', 'inconsistent .xarc table'));
+    if (z < 0 || z + 9 > buf.length) throw new PatchError(tr('xarcTable'));
     const name = buf.subarray(o, z);
     o = z + 1;
     members.push({ name, len: buf.readUInt32LE(o), flag: buf.readUInt32LE(o + 4) });
@@ -181,24 +178,23 @@ function applyXarc(buf, e) {
   }
   let off = first;
   for (const m of members) {
-    if (off + m.len > buf.length) throw new PatchError(tr('tabela do .xarc inconsistente', 'inconsistent .xarc table'));
+    if (off + m.len > buf.length) throw new PatchError(tr('xarcTable'));
     m.off = off; off += m.len;
   }
-  if (off !== buf.length) throw new PatchError(tr('tamanho do .xarc inconsistente', 'inconsistent .xarc size'));
+  if (off !== buf.length) throw new PatchError(tr('xarcSize'));
   const xi = members.findIndex(m => m.name.toString('latin1').toLowerCase().endsWith('.xrc'));
-  if (xi < 0) throw new PatchError(tr('o .xarc não contém .xrc', 'the .xarc has no .xrc'));
+  if (xi < 0) throw new PatchError(tr('xarcNoXrc'));
   const xrc = buf.subarray(members[xi].off, members[xi].off + members[xi].len);
   const nodes = parseNodes(xrc);
   if (nodes.length !== e.nodeCount) {
-    throw new PatchError(tr(`estrutura diferente da esperada (${nodes.length} nós, esperado ${e.nodeCount})`,
-                            `unexpected structure (${nodes.length} nodes, expected ${e.nodeCount})`));
+    throw new PatchError(tr('structureUnexpected', { count: nodes.length, expected: e.nodeCount }));
   }
   const reps = [];
   let others = 0;
   for (const ed of e.edits) {
     const nd = nodes[ed.node];
-    if (nd === undefined) throw new PatchError(tr('nó inexistente', 'missing node'));
-    if (nd.type !== ed.type || nd.sub !== ed.sub) throw new PatchError(tr('tipo de nó diferente do esperado', 'unexpected node type'));
+    if (nd === undefined) throw new PatchError(tr('nodeMissing'));
+    if (nd.type !== ed.type || nd.sub !== ed.sub) throw new PatchError(tr('nodeType'));
     if (ed.op === OP_RENAME) {
       const cur = xrc.subarray(nd.nameOff + 2, nd.nameOff + 2 + nd.nameLen);
       if (!cur.equals(ed.payload) && crc32(cur) !== ed.crcOrig) others++;
@@ -208,21 +204,21 @@ function applyXarc(buf, e) {
     const data = xrc.subarray(nd.dataOff + 4, nd.dataOff + 4 + nd.dataLen);
     let nw;
     if (ed.op === OP_SPEECH) {
-      if (data.length < 2) throw new PatchError(tr('fala inválida', 'invalid dialogue line'));
+      if (data.length < 2) throw new PatchError(tr('speechInvalid'));
       const tl = data.readUInt16LE(0);
-      if (2 + tl > data.length) throw new PatchError(tr('fala inválida', 'invalid dialogue line'));
+      if (2 + tl > data.length) throw new PatchError(tr('speechInvalid'));
       const cur = data.subarray(2, 2 + tl), tail = data.subarray(2 + tl);
-      if (crc32(tail) !== ed.crcKeep) throw new PatchError(tr('dados da fala diferentes do esperado', 'unexpected dialogue line data'));
+      if (crc32(tail) !== ed.crcKeep) throw new PatchError(tr('speechData'));
       if (!cur.equals(ed.payload) && crc32(cur) !== ed.crcOrig) others++;
       nw = Buffer.concat([le16(ed.payload.length), ed.payload, tail]);
     } else if (ed.op === OP_IMGTEXT) {
       const x = ed.aux;
-      if (x + 2 > data.length) throw new PatchError(tr('texto de imagem inválido', 'invalid image text'));
+      if (x + 2 > data.length) throw new PatchError(tr('imageTextInvalid'));
       const tl = data.readUInt16LE(x);
-      if (x + 2 + tl > data.length) throw new PatchError(tr('texto de imagem inválido', 'invalid image text'));
+      if (x + 2 + tl > data.length) throw new PatchError(tr('imageTextInvalid'));
       const head = data.subarray(0, x), cur = data.subarray(x + 2, x + 2 + tl), trail = data.subarray(x + 2 + tl);
       if (crc32(Buffer.concat([head, trail])) !== ed.crcKeep) {
-        throw new PatchError(tr('dados do texto de imagem diferentes do esperado', 'unexpected image text data'));
+        throw new PatchError(tr('imageTextData'));
       }
       if (!cur.equals(ed.payload) && crc32(cur) !== ed.crcOrig) others++;
       nw = Buffer.concat([head, le16(ed.payload.length), ed.payload, trail]);
@@ -230,7 +226,7 @@ function applyXarc(buf, e) {
       if (!data.equals(ed.payload) && crc32(data) !== ed.crcOrig) others++;
       nw = ed.payload;
     } else {
-      throw new PatchError(tr('operação desconhecida no patch', 'unknown operation in the patch'));
+      throw new PatchError(tr('operationUnknown'));
     }
     reps.push([nd.dataOff, nd.dataOff + 4 + nd.dataLen, Buffer.concat([le32(nw.length), nw])]);
   }
@@ -238,7 +234,7 @@ function applyXarc(buf, e) {
   const parts = [];
   let pos = 0;
   for (const [a, b, bytes] of reps) {
-    if (a < pos) throw new PatchError(tr('edições sobrepostas', 'overlapping edits'));
+    if (a < pos) throw new PatchError(tr('editsOverlap'));
     parts.push(xrc.subarray(pos, a), bytes);
     pos = b;
   }
@@ -254,7 +250,7 @@ function applyXarc(buf, e) {
   const res = Buffer.concat(out);
   const ok = sha1(res).equals(e.shaOut) && res.length === e.sizeOut;
   if (isOrig) {
-    if (!ok) throw new PatchError(tr('resultado inesperado (patch e jogo não combinam)', 'unexpected result (the patch and the game do not match)'));
+    if (!ok) throw new PatchError(tr('resultUnexpected'));
     return { data: res, status: 'original', others: 0 };
   }
   return { data: res, status: ok ? 'atualizado' : 'divergente', others };
@@ -265,7 +261,7 @@ function applyEntry(buf, e) {
     if (buf && sha1(buf).equals(e.shaOut)) return { data: buf, status: 'ja_instalado', others: 0 };
     return { data: e.content, status: (buf && sha1(buf).equals(e.shaEn)) ? 'original' : 'atualizado', others: 0 };
   }
-  if (!buf) throw new PatchError(tr('arquivo não encontrado', 'file not found'));
+  if (!buf) throw new PatchError(tr('fileMissing'));
   return applyXarc(buf, e);
 }
 
@@ -331,15 +327,13 @@ function makeInstallPatchMod(api) {
     const patchRel = files.find(f => path.basename(f).toLowerCase().endsWith('.tljpatch'));
     const game = gamePath(api);
     if (!game) {
-      throw new util.ProcessCanceled(tr('The Longest Journey não foi encontrado. Abra a aba Games e configure o jogo primeiro.',
-                                        'The Longest Journey was not found. Open the Games page and set up the game first.'));
+      throw new util.ProcessCanceled(tr('gameNotFound'));
     }
     let patch;
     try {
       patch = readPatch(await fsp.readFile(path.join(destinationPath, patchRel)));
     } catch (err) {
-      throw new util.ProcessCanceled(tr(`Não foi possível ler ${path.basename(patchRel)}: ${err.message}`,
-                                        `Could not read ${path.basename(patchRel)}: ${err.message}`));
+      throw new util.ProcessCanceled(tr('patchReadFailed', { file: path.basename(patchRel), error: err.message }));
     }
     const cache = new Map();
     log('info', 'tlj: aplicando patch', { version: patch.version, entries: patch.entries.length, game });
@@ -353,14 +347,14 @@ function makeInstallPatchMod(api) {
       let buf = await readIfExists(real.abs + BACKUP_TAG);
       if (buf === null) buf = await readIfExists(real.abs);
       if (buf === null && e.kind === KIND_XARC) {
-        problems.push(tr(`faltando: ${e.path}`, `missing: ${e.path}`));
+        problems.push(tr('pathMissing', { path: e.path }));
         continue;
       }
       let res;
       try {
         res = applyEntry(buf, e);
       } catch (err) {
-        problems.push(tr(`diferente: ${e.path} (${err.message})`, `different: ${e.path} (${err.message})`));
+        problems.push(tr('pathDifferent', { path: e.path, error: err.message }));
         continue;
       }
       counts[res.status] = (counts[res.status] || 0) + 1;
@@ -382,21 +376,10 @@ function makeInstallPatchMod(api) {
     if (problems.length > 0) {
       const lista = problems.slice(0, 12).map(p => '- ' + p).join('\n');
       const more = problems.length - 12;
-      api.showDialog('error', tr('Tradução não instalada', 'Translation not installed'), {
-        text: tr('Alguns arquivos do jogo não são os esperados (podem ser de outra versão, estar corrompidos '
-          + 'ou ter sido substituídos por uma tradução copiada manualmente):\n\n' + lista
-          + (more > 0 ? `\n... e mais ${more}` : '')
-          + '\n\nSolução: desinstale outros mods que mexem nesses arquivos e, na Steam, use '
-          + 'Propriedades > Arquivos instalados > Verificar integridade (na GOG Galaxy: Gerenciar '
-          + 'instalação > Verificar/Reparar). Depois instale a tradução de novo.',
-        'Some game files are not the expected ones (they may be from another version, be damaged '
-          + 'or have been replaced by a translation copied by hand):\n\n' + lista
-          + (more > 0 ? `\n... and ${more} more` : '')
-          + '\n\nFix: uninstall other mods that change these files and, on Steam, use '
-          + 'Properties > Installed Files > Verify integrity of game files (in GOG Galaxy: Manage '
-          + 'installation > Verify / Repair). Then install the translation again.'),
-      }, [{ label: tr('Fechar', 'Close') }]);
-      throw new util.ProcessCanceled(tr('arquivos do jogo diferentes do esperado', 'game files differ from the expected ones'));
+      api.showDialog('error', tr('translationNotInstalled'), {
+        text: tr('translationMismatchBody', { problems: lista, more: more > 0 ? tr('problemsMore', { count: more }) : '' }),
+      }, [{ label: tr('close') }]);
+      throw new util.ProcessCanceled(tr('gameMismatch'));
     }
     log('info', 'tlj: patch aplicado', counts);
     if (progress) progress(100);
@@ -439,14 +422,8 @@ function notifyIdentified(api, engine, archivePath, destinationPath) {
     id: `tlj-identificado-${name.replace(/[^a-z0-9]+/gi, '-').toLowerCase()}`,
     type: 'info',
     message: engine === 'scummvm'
-      ? tr(`Mod do ScummVM identificado: ${name}. Ele só funciona no ScummVM: ao clicar em Jogar, o Vortex `
-        + 'abre o jogo no ScummVM (e baixa e configura o ScummVM, se precisar).',
-      `ScummVM mod detected: ${name}. It only works in ScummVM: when you click Play, Vortex starts the game `
-        + 'in ScummVM (and downloads and sets up ScummVM if needed).')
-      : tr(`Mod do jogo original identificado: ${name}. Ele só funciona no game.exe, não no ScummVM. Se você `
-        + 'também ativar mods do ScummVM, o Vortex pergunta qual combinação usar ao clicar em Jogar.',
-      `Original game mod detected: ${name}. It only works with game.exe, not in ScummVM. If you also enable `
-        + 'ScummVM mods, Vortex asks which combination to use when you click Play.'),
+      ? tr('detectedScummvmMod', { name })
+      : tr('detectedOriginalMod', { name }),
   });
 }
 
@@ -629,65 +606,73 @@ function makeInstallAssetMod(api) {
   };
 }
 
-// ---------------------------------------------------------------- pacote de jogos salvos do ScummVM
-// Os saves do TLJ no ScummVM se chamam <id do jogo>-001.tlj ... e ficam na pasta de saves do ScummVM,
-// não na pasta do jogo. Em vez de jogar isso na pasta do jogo (onde não serve), o Vortex explica.
-const SAVE_FILE = /\.tlj$/i;
+// ---------------------------------------------------------------- pacotes de jogos salvos
+// Os saves do TLJ no ScummVM se chamam <id do jogo>-001.tlj ... e ficam na pasta de saves do ScummVM;
+// os do jogo original (game.exe) se chamam Save01.tlj (+ Save01.tga e Index.dat) e ficam em
+// %APPDATA%\The Longest Journey\Save\01. Os dois formatos são diferentes: um não abre no outro.
+// Nenhum vai na pasta do jogo: em vez de instalar lá (onde não serve), o Vortex explica onde vão.
+const SAVE_FILE = /-\d{3}\.tlj$/i;                       // ScummVM
+const ORIGINAL_SAVE_FILE = /(^|[\\/])save\d+\.tlj$/i;       // jogo original
 
 function testSavePack(files, gameId) {
   const real = files.filter(f => !isDirEntry(f));
   const supported = (gameId === GAME_ID)
-    && real.some(f => SAVE_FILE.test(f))
+    && real.some(f => SAVE_FILE.test(f) || ORIGINAL_SAVE_FILE.test(f))
     && !real.some(f => /\.(xarc|tljpatch|bbb|sss|png|zip|dds|bik|smk|ttf|ini)$/i.test(f));
   return Promise.resolve({ supported, requiredFiles: [] });
 }
 
+const sampleOf = names => `${names.slice(0, 3).join(', ')}${names.length > 3 ? ', ...' : ''}`;
+
 function makeInstallSavePack(api) {
-  return async (files) => {
-    const saves = files.filter(f => SAVE_FILE.test(f)).map(f => path.basename(f)).sort();
-    const ids = Array.from(new Set(saves.map(n => n.replace(/-\d+\.tlj$/i, ''))));
-    const appData = process.env.APPDATA;
-    const saveDir = appData ? path.join(appData, 'ScummVM', 'Saved games') : undefined;
-    const OPEN = tr('Abrir a pasta de saves do ScummVM', 'Open the ScummVM saves folder');
-    const CLOSE = tr('Fechar', 'Close');
-    const actions = saveDir !== undefined ? [{ label: OPEN }, { label: CLOSE, default: true }]
-                                          : [{ label: CLOSE, default: true }];
-    const sample = `${saves.slice(0, 3).join(', ')}${saves.length > 3 ? ', ...' : ''}`;
-    const defaultId = ids.length === 1 && ids[0].toLowerCase() === 'tlj-win';
-    const one = saves.length === 1;
-    if (typeof api.showDialog === 'function') {
-      const res = await api.showDialog('info', tr('Pacote de jogos salvos do ScummVM', 'ScummVM savegame pack'), {
-        text: tr(`Este arquivo traz ${saves.length} jogo(s) salvo(s) do ScummVM (${sample}). `
-          + 'Eles não vão na pasta do jogo, então o Vortex não instala.\n\n'
-          + 'Extraia os arquivos .tlj na pasta de jogos salvos do ScummVM (no ScummVM: Opções > Caminhos). '
-          + 'No Windows ela costuma ser %APPDATA%\\ScummVM\\Saved games.\n\n'
-          + (defaultId
-            ? 'Eles aparecem no jogo cujo ID no ScummVM é "tlj-win" (o ID padrão ao adicionar o jogo). '
-            : `Eles aparecem no jogo cujo ID no ScummVM é "${ids.join('", "')}"; o padrão do ScummVM é `
-              + '"tlj-win" (se o seu for outro, renomeie os arquivos). ')
-          + 'Cuidado para não sobrescrever os seus saves com o mesmo número.',
-        `This archive has ${saves.length} ScummVM saved game${one ? '' : 's'} (${sample}). `
-          + (one ? 'It doesn\'t go in the game folder, so Vortex doesn\'t install it.\n\n'
-                 : 'They don\'t go in the game folder, so Vortex doesn\'t install them.\n\n')
-          + `Extract the .tlj file${one ? '' : 's'} into the ScummVM saved games folder (in ScummVM: Global Options > Paths). `
-          + 'On Windows it is usually %APPDATA%\\ScummVM\\Saved games.\n\n'
-          + (defaultId
-            ? `${one ? 'It shows' : 'They show'} up in the game whose ScummVM ID is "tlj-win" (the default ID when you add the game). `
-            : `${one ? 'It shows' : 'They show'} up in the game whose ScummVM ID is "${ids.join('", "')}"; the ScummVM default is `
-              + `"tlj-win" (if yours is different, rename the file${one ? '' : 's'}). `)
-          + 'Be careful not to overwrite your own saves that have the same number.'),
-      }, actions);
-      if (res && res.action === OPEN) {
-        try {
-          await fsp.mkdir(saveDir, { recursive: true });
-          Promise.resolve(util.opn(saveDir)).catch(() => null);
-        } catch (err) {
-          log('warn', 'tlj: não foi possível abrir a pasta de saves', err.message);
-        }
+  return async (files, destinationPath, gameId, progress, choices, unattended, archivePath) => {
+    const real = files.filter(f => !isDirEntry(f));
+    const saves = real.filter(f => SAVE_FILE.test(f)).map(f => path.basename(f)).sort();
+    const originalFiles = real.filter(f => ORIGINAL_SAVE_FILE.test(f)).sort();
+    const originals = originalFiles.map(f => path.basename(f)).sort();
+    if (saves.length > 0 && typeof api.showDialog === 'function') {
+      const ids = Array.from(new Set(saves.map(n => n.replace(/-\d+\.tlj$/i, ''))));
+      const saveDir = await scummvmSavesDir(await findScummVM(await loadPrefs()));
+      const OPEN = tr('openSavesFolder');
+      const defaultId = ids.length === 1 && ids[0].toLowerCase() === 'tlj-win';
+      const res = await api.showDialog('info', tr('savePackTitle'), {
+        text: tr('savePackBody', { count: saves.length, sample: sampleOf(saves),
+          target: defaultId ? tr('saveDefaultTarget') : tr('saveCustomTarget', { ids: ids.join('", "') }) }),
+      }, [{ label: OPEN }, { label: tr('close'), default: true }]);
+      if (res && res.action === OPEN) await openFolder(saveDir);
+    }
+    if (originals.length > 0 && typeof api.showDialog === 'function') {
+      const dir = await originalSavesTarget();
+      const OPEN = tr('openOriginalSavesFolder');
+      const CONVERT = tr('convertOriginalSaves');
+      const buttons = [{ label: OPEN }];
+      if (destinationPath) buttons.push({ label: CONVERT });
+      buttons.push({ label: tr('close'), default: true });
+      const res = await api.showDialog('info', tr('originalSavesTitle'), {
+        text: tr('originalSavePackBody', { count: originals.length, sample: sampleOf(originals), dir, convert: CONVERT }),
+      }, buttons);
+      if (res && res.action === OPEN) await openFolder(dir);
+      if (res && res.action === CONVERT) {
+        // os arquivos do pacote já estão extraídos em destinationPath; a origem fica registrada pelo nome do pacote
+        const pack = archivePath ? path.basename(archivePath) : path.basename(destinationPath);
+        await runConversion(api, originalFiles.map(rel => ({ file: path.join(destinationPath, rel), id: `${pack}|${rel}` })));
       }
     }
     throw new util.UserCanceled();
   };
+}
+
+/** pasta onde o jogo original guarda os saves: a que já existir (com a subpasta do perfil, 01) ou a padrão */
+async function originalSavesTarget() {
+  const found = await originalSavesDirs().catch(() => []);
+  const base = found[0] || path.join(process.env.APPDATA || path.join(os.homedir(), 'AppData', 'Roaming'),
+    'The Longest Journey', 'Save');
+  try {
+    if ((await fsp.stat(path.join(base, '01'))).isDirectory()) return path.join(base, '01');
+  } catch (err) {
+    // sem a subpasta do perfil
+  }
+  return base;
 }
 
 // ---------------------------------------------------------------- ScummVM automático
@@ -708,6 +693,8 @@ const SCUMMVM_SITE = 'https://www.scummvm.org/downloads/';
 const SCUMMVM_TARGET = 'tlj-win';            // nome padrão que o ScummVM dá ao jogo (os saves usam ele)
 const PREFS_FILE = 'tlj_scummvm.json';
 const SHADOW_DIR = 'scummvm_pasta_jogo';
+const OWN_DIR = 'ScummVM';                  // pasta do ScummVM baixado pela extensão (dentro de dataDir())
+const OWN_DESCRIPTION = 'The Longest Journey (Vortex)';   // marca o jogo que a extensão cadastra no scummvm.ini
 const ENGINE_SCUMMVM = 'scummvm';
 const ENGINE_GAME = 'game';
 const IS_WIN = process.platform === 'win32';
@@ -793,7 +780,7 @@ function scummvmFromRegistry() {
 async function findScummVM(prefs) {
   const cands = [];
   if (prefs.scummvmExe) cands.push(prefs.scummvmExe);
-  const own = await findFile(path.join(dataDir(), 'ScummVM'), SCUMMVM_EXE, 2);
+  const own = await findFile(path.join(dataDir(), OWN_DIR), SCUMMVM_EXE, 3);
   if (own) cands.push(own);
   cands.push(...scummvmFromRegistry());
   if (IS_WIN) {
@@ -819,19 +806,19 @@ function request(url, redirects = 5) {
     const req = mod.get(url, { headers: { 'User-Agent': 'Vortex-TheLongestJourney' } }, (res) => {
       if ([301, 302, 303, 307, 308].includes(res.statusCode) && res.headers.location) {
         res.resume();
-        if (redirects <= 0) { reject(new Error(tr('redirecionamentos demais', 'too many redirects'))); return; }
+        if (redirects <= 0) { reject(new Error(tr('tooManyRedirects'))); return; }
         resolve(request(new URL(res.headers.location, url).toString(), redirects - 1));
         return;
       }
       if (res.statusCode !== 200) {
         res.resume();
-        reject(new Error(tr(`o servidor respondeu ${res.statusCode}`, `the server replied ${res.statusCode}`)));
+        reject(new Error(tr('serverStatus', { status: res.statusCode })));
         return;
       }
       resolve(res);
     });
     req.on('error', reject);
-    req.setTimeout(60000, () => req.destroy(new Error(tr('a conexão demorou demais', 'the connection timed out'))));
+    req.setTimeout(60000, () => req.destroy(new Error(tr('timeout'))));
   });
 }
 
@@ -863,13 +850,13 @@ async function unzipFile(zipPath, destDir) {
   for (let i = buf.length - 22; i >= Math.max(0, buf.length - 65557); i--) {
     if (buf.readUInt32LE(i) === 0x06054b50) { eocd = i; break; }
   }
-  if (eocd < 0) throw new Error(tr('zip inválido', 'invalid zip'));
+  if (eocd < 0) throw new Error(tr('zipInvalid'));
   const count = buf.readUInt16LE(eocd + 10);
   let o = buf.readUInt32LE(eocd + 16);
-  if (count === 0xFFFF || o === 0xFFFFFFFF) throw new Error(tr('zip64 não suportado', 'zip64 not supported'));
+  if (count === 0xFFFF || o === 0xFFFFFFFF) throw new Error(tr('zip64'));
   const root = path.resolve(destDir);
   for (let i = 0; i < count; i++) {
-    if (buf.readUInt32LE(o) !== 0x02014b50) throw new Error(tr('zip inválido (diretório central)', 'invalid zip (central directory)'));
+    if (buf.readUInt32LE(o) !== 0x02014b50) throw new Error(tr('zipDirectory'));
     const method = buf.readUInt16LE(o + 10);
     const csize = buf.readUInt32LE(o + 20);
     const nlen = buf.readUInt16LE(o + 28);
@@ -883,13 +870,13 @@ async function unzipFile(zipPath, destDir) {
     const out = path.join(root, ...parts);
     if (!out.startsWith(root + path.sep)) continue;
     if (/[\\/]$/.test(name)) { await fsp.mkdir(out, { recursive: true }); continue; }
-    if (buf.readUInt32LE(loc) !== 0x04034b50) throw new Error(tr('zip inválido (cabeçalho local)', 'invalid zip (local header)'));
+    if (buf.readUInt32LE(loc) !== 0x04034b50) throw new Error(tr('zipHeader'));
     const start = loc + 30 + buf.readUInt16LE(loc + 26) + buf.readUInt16LE(loc + 28);
     const raw = buf.subarray(start, start + csize);
     let data;
     if (method === 0) data = raw;
     else if (method === 8) data = zlib.inflateRawSync(raw);
-    else throw new Error(tr(`compressão ${method} não suportada`, `compression method ${method} not supported`));
+    else throw new Error(tr('compressionUnsupported', { method }));
     await fsp.mkdir(path.dirname(out), { recursive: true });
     await fsp.writeFile(out, data);
   }
@@ -908,9 +895,15 @@ async function extractArchive(archive, dest) {
   await unzipFile(archive, dest);
 }
 
-async function downloadScummVM(api) {
+let downloading = null;   // um download só por vez: clicar em Jogar de novo espera o que já está andando
+function downloadScummVM(api) {
+  if (!downloading) downloading = downloadScummVMNow(api).finally(() => { downloading = null; });
+  return downloading;
+}
+
+async function downloadScummVMNow(api) {
   const dir = dataDir();
-  const base = path.join(dir, 'ScummVM');
+  const base = path.join(dir, OWN_DIR);
   const tmp = path.join(dir, 'scummvm_download.zip');
   await fsp.mkdir(dir, { recursive: true });
   const note = (progress, message) => {
@@ -918,7 +911,7 @@ async function downloadScummVM(api) {
       api.sendNotification({ id: 'tlj-scummvm-download', type: 'activity', message, progress, noDismiss: true });
     }
   };
-  const msg = tr(`Baixando o ScummVM ${SCUMMVM_RELEASE.version}...`, `Downloading ScummVM ${SCUMMVM_RELEASE.version}...`);
+  const msg = tr('downloadingScummvm', { version: SCUMMVM_RELEASE.version });
   note(0, msg);
   let last = -1;
   try {
@@ -934,14 +927,22 @@ async function downloadScummVM(api) {
       // sem o .sha256 do site, confere com o valor conhecido
     }
     if (digest !== expected) {
-      throw new Error(tr('o arquivo baixado não confere (SHA-256 diferente)', 'the downloaded file does not match (SHA-256 mismatch)'));
+      throw new Error(tr('checksumMismatch'));
     }
-    note(100, tr('Extraindo o ScummVM...', 'Extracting ScummVM...'));
+    note(100, tr('extractingScummvm'));
     await fsp.rm(base, { recursive: true, force: true });   // pasta só nossa, sem links
     await fsp.mkdir(base, { recursive: true });
     await extractArchive(tmp, base);
-    const exe = await findFile(base, SCUMMVM_EXE, 3);
-    if (!exe) throw new Error(tr('scummvm.exe não veio no pacote', 'scummvm.exe is missing from the package'));
+    let exe = await findFile(base, SCUMMVM_EXE, 3);
+    if (!exe) {
+      // o 7-Zip do Vortex às vezes termina sem erro mas sem extrair tudo: extrai de novo com o extrator interno
+      log('warn', 'tlj: scummvm.exe não apareceu depois do 7-Zip, usando o extrator interno');
+      await fsp.rm(base, { recursive: true, force: true });
+      await fsp.mkdir(base, { recursive: true });
+      await unzipFile(tmp, base);
+      exe = await findFile(base, SCUMMVM_EXE, 3);
+    }
+    if (!exe) throw new Error(tr('missingScummvm'));
     return exe;
   } finally {
     if (typeof api.dismissNotification === 'function') api.dismissNotification('tlj-scummvm-download');
@@ -951,7 +952,7 @@ async function downloadScummVM(api) {
 
 async function pickScummVM(api, prefs) {
   const exe = await api.selectExecutable({
-    title: tr('Escolha o scummvm.exe', 'Select scummvm.exe'),
+    title: tr('selectScummvm'),
     filters: IS_WIN ? [{ name: 'ScummVM', extensions: ['exe'] }] : [],
   });
   if (!exe) throw new util.UserCanceled();
@@ -961,28 +962,26 @@ async function pickScummVM(api, prefs) {
 }
 
 async function obtainScummVM(api, prefs) {
-  const DOWNLOAD = tr('Baixar e configurar', 'Download and set up');
-  const PICK = tr('Escolher scummvm.exe...', 'Select scummvm.exe...');
-  const SITE = tr('Abrir o site', 'Open website');
-  const actions = [{ label: tr('Cancelar', 'Cancel') }, { label: SITE }, { label: PICK }];
+  const DOWNLOAD = tr('downloadSetup');
+  const PICK = tr('selectScummvmAction');
+  const SITE = tr('openWebsite');
+  const actions = [{ label: tr('cancel') }, { label: SITE }, { label: PICK }];
   if (IS_WIN) actions.push({ label: DOWNLOAD, default: true });
-  const res = await api.showDialog('question', tr('ScummVM não encontrado', 'ScummVM not found'), {
-    text: tr('Há mods do ScummVM ativos (como o TLJ HD), e eles só funcionam nele. O ScummVM (gratuito, '
-      + 'código aberto) não foi encontrado neste PC.\n\n'
-      + (IS_WIN ? `Posso baixar o ScummVM ${SCUMMVM_RELEASE.version} oficial (${SCUMMVM_RELEASE.sizeMB} MB, `
-        + 'de downloads.scummvm.org, conferido por SHA-256) e deixá-lo pronto para o Vortex. ' : '')
-      + 'Se você já tem o ScummVM, escolha o scummvm.exe.',
-    'ScummVM mods are enabled (such as TLJ HD), and they only work in ScummVM. ScummVM (free and '
-      + 'open source) was not found on this PC.\n\n'
-      + (IS_WIN ? `Vortex can download the official ScummVM ${SCUMMVM_RELEASE.version} (${SCUMMVM_RELEASE.sizeMB} MB, `
-        + 'from downloads.scummvm.org, verified by SHA-256) and set it up for you. ' : '')
-      + 'If you already have ScummVM, select its scummvm.exe.'),
+  const res = await api.showDialog('question', tr('scummvmNotFound'), {
+    text: tr('scummvmRequired', { download: IS_WIN ? tr('scummvmDownloadOffer', { version: SCUMMVM_RELEASE.version, size: SCUMMVM_RELEASE.sizeMB }) : '' }),
   }, actions);
   const act = res ? res.action : undefined;
   if (act === DOWNLOAD) {
     const exe = await downloadScummVM(api);
     prefs.scummvmExe = exe;
     await savePrefs(prefs);
+    if (typeof api.sendNotification === 'function') {
+      // fica até o jogador fechar: diz onde o ScummVM foi parar e como tirar
+      api.sendNotification({
+        id: 'tlj-scummvm-downloaded', type: 'info',
+        message: tr('scummvmDownloaded', { version: SCUMMVM_RELEASE.version, dir: path.join(dataDir(), OWN_DIR) }),
+      });
+    }
     return exe;
   }
   if (act === PICK) return pickScummVM(api, prefs);
@@ -1111,9 +1110,8 @@ async function ensureScummVMTarget(cfgFile, scvPath, game) {
     return ours.name;
   }
   const names = new Set(ini.sections.map(s => s.name.toLowerCase()));
-  let name = SCUMMVM_TARGET;
-  for (let n = 1; names.has(name.toLowerCase()); n++) name = `${SCUMMVM_TARGET}-vortex${n > 1 ? n : ''}`;
-  const block = [`[${name}]`, 'description=The Longest Journey (Vortex)', 'gameid=tlj', 'engineid=stark',
+  const name = newTargetName(ini);
+  const block = [`[${name}]`, `description=${OWN_DESCRIPTION}`, 'gameid=tlj', 'engineid=stark',
                  `path=${scvPath}`];
   if (!names.has('scummvm')) block.unshift('[scummvm]', '');
   const body = text.replace(/\s+$/, '');
@@ -1214,30 +1212,21 @@ async function resolveConflict(api, groups) {
   const choices = [{
     id: 'scummvm_compat',
     text: groups.both.length > 0
-      ? tr('ScummVM com os mods do ScummVM + os compatíveis (recomendado)', 'ScummVM with the ScummVM mods + the compatible ones (recommended)')
-      : tr('ScummVM com os mods do ScummVM (recomendado)', 'ScummVM with the ScummVM mods (recommended)'),
+      ? tr('conflictRecommendedBoth')
+      : tr('conflictRecommended'),
     value: true,
   }];
   if (groups.both.length > 0) {
-    choices.push({ id: 'scummvm_only', text: tr('ScummVM só com os mods do ScummVM', 'ScummVM with only the ScummVM mods'), value: false });
+    choices.push({ id: 'scummvm_only', text: tr('conflictOnlyScummvm'), value: false });
   }
   choices.push({ id: 'exe', value: false,
-    text: tr('Jogo original (game.exe) só com os mods que não precisam do ScummVM',
-             'Original game (game.exe) with only the mods that don\'t need ScummVM') });
-  const CONTINUE = tr('Continuar', 'Continue');
-  const res = await api.showDialog('question', tr('Mods que não funcionam juntos', 'Mods that don\'t work together'), {
-    text: tr(`Estes mods só funcionam no ScummVM:\n${list(scummvmMods)}\n\n`
-      + `Estes só funcionam no jogo original (game.exe):\n${list(groups.exe)}`
-      + (groups.both.length > 0 ? `\n\nEstes funcionam nos dois:\n${list(groups.both)}` : '')
-      + '\n\nEscolha uma combinação. Os mods que ficarem de fora são desativados (dá para ativar de novo '
-      + 'na aba Mods).',
-    `These mods only work in ScummVM:\n${list(scummvmMods)}\n\n`
-      + `These only work in the original game (game.exe):\n${list(groups.exe)}`
-      + (groups.both.length > 0 ? `\n\nThese work in both:\n${list(groups.both)}` : '')
-      + '\n\nChoose a combination. The mods left out are disabled (you can enable them again '
-      + 'on the Mods page).'),
+    text: tr('conflictOriginal') });
+  const CONTINUE = tr('continue');
+  const res = await api.showDialog('question', tr('conflictTitle'), {
+    text: tr('conflictBody', { scummvm: list(scummvmMods), original: list(groups.exe),
+      compatible: groups.both.length > 0 ? tr('conflictBoth', { mods: list(groups.both) }) : '' }),
     choices,
-  }, [{ label: tr('Cancelar', 'Cancel') }, { label: CONTINUE, default: true }]);
+  }, [{ label: tr('cancel') }, { label: CONTINUE, default: true }]);
   if (!res || res.action !== CONTINUE) throw new util.UserCanceled();
   const sel = Object.keys(res.input || {}).find(k => res.input[k] === true) || 'scummvm_compat';
   if (sel === 'exe') {
@@ -1257,10 +1246,7 @@ function notifyAuto(api, mods) {
     id: 'tlj-scummvm-auto',
     type: 'info',
     displayMS: 8000,
-    message: tr(`Abrindo no ScummVM por causa dos mods do ScummVM ativos: ${shown}`
-      + `${more > 0 ? ` e mais ${more}` : ''}. Para mudar, use o botão "ScummVM" na aba Mods.`,
-    `Starting in ScummVM because of the enabled ScummVM mods: ${shown}`
-      + `${more > 0 ? ` and ${more} more` : ''}. To change this, use the "ScummVM" button on the Mods page.`),
+    message: tr('autoScummvm', { mods: shown, more: more > 0 ? tr('autoMore', { count: more }) : '' }),
   });
 }
 
@@ -1312,13 +1298,14 @@ function makeStartHook(api) {
     const engine = await decideEngine(api, game, prefs);
     if (engine !== ENGINE_SCUMMVM) return call;
     try {
+      await warnOriginalSaves(api, prefs);
       const s = await prepareScummVM(api, game, prefs);
       log('info', 'tlj: abrindo no ScummVM', { exe: s.exe, args: s.args });
       return { executable: s.exe, args: s.args, options: { ...call.options, cwd: s.cwd, shell: false, detach: true } };
     } catch (err) {
       if (err instanceof util.UserCanceled || err instanceof util.ProcessCanceled) throw err;
       if (typeof api.showErrorNotification === 'function') {
-        api.showErrorNotification(tr('Não foi possível abrir o jogo no ScummVM', 'Could not start the game in ScummVM'), err,
+        api.showErrorNotification(tr('scummvmStartFailed'), err,
                                   { allowReport: false });
       }
       throw new util.ProcessCanceled(err.message);
@@ -1326,29 +1313,50 @@ function makeStartHook(api) {
   };
 }
 
-/** botão "ScummVM" na aba Mods: automático, sempre ScummVM ou sempre o jogo original */
+/** botão "ScummVM" na aba Mods: automático, sempre ScummVM ou sempre o jogo original; mostra a pasta
+ *  de saves e, se foi a extensão que baixou o ScummVM, oferece removê-lo */
 async function configureEngine(api) {
   const prefs = await loadPrefs();
   const exe = await findScummVM(prefs);
+  const ownExe = await ownScummVM();
+  const saves = await scummvmSavesDir(exe);
   const mode = prefs.mode || 'auto';
-  const PICK = tr('Escolher outro scummvm.exe...', 'Select another scummvm.exe...');
-  const SAVE = tr('Salvar', 'Save');
+  const PICK = tr('selectAnotherScummvm');
+  const SAVE = tr('save');
+  const OPEN = tr('openSavesFolder');
+  const REMOVE = tr('removeDownloadedScummvm');
+  const CONVERT = tr('convertOriginalSaves');
+  const originalDirs = await originalSavesDirs().catch(() => []);
+  const shown = !exe ? tr('scummvmNotFoundHint')
+    : (ownExe && samePath(exe, ownExe)) ? tr('scummvmDownloadedPath', { exe }) : exe;
+  const buttons = [{ label: tr('cancel') }, { label: OPEN }];
+  if (originalDirs.length) buttons.push({ label: CONVERT });
+  if (ownExe) buttons.push({ label: REMOVE });
+  buttons.push({ label: PICK }, { label: SAVE, default: true });
   const res = await api.showDialog('question', 'The Longest Journey: ScummVM', {
-    text: `ScummVM: ${exe || tr('não encontrado (o Vortex oferece baixar quando precisar)',
-                                'not found (Vortex offers to download it when needed)')}\n\n`
-      + tr('Ao clicar em Jogar no Vortex:', 'When you click Play in Vortex:'),
+    text: `ScummVM: ${shown}\n${tr('savesFolderLine', { dir: saves })}\n\n`
+      + tr('playPrompt'),
     choices: [
       { id: 'auto', value: mode === 'auto',
-        text: tr('Automático (recomendado): ScummVM quando houver mods do ScummVM ativos; se também houver '
-          + 'mods que só funcionam no jogo original, o Vortex pergunta',
-        'Automatic (recommended): ScummVM when ScummVM mods are enabled; if mods that only work in the '
-          + 'original game are enabled too, Vortex asks') },
-      { id: ENGINE_SCUMMVM, text: tr('Sempre abrir no ScummVM', 'Always start in ScummVM'), value: mode === ENGINE_SCUMMVM },
-      { id: ENGINE_GAME, text: tr('Sempre abrir no jogo original (game.exe)', 'Always start the original game (game.exe)'),
+        text: tr('autoMode') },
+      { id: ENGINE_SCUMMVM, text: tr('alwaysScummvm'), value: mode === ENGINE_SCUMMVM },
+      { id: ENGINE_GAME, text: tr('alwaysOriginal'),
         value: mode === ENGINE_GAME },
     ],
-  }, [{ label: tr('Cancelar', 'Cancel') }, { label: PICK }, { label: SAVE, default: true }]);
+  }, buttons);
   if (!res) return;
+  if (res.action === OPEN) {
+    await openFolder(saves);
+    return;
+  }
+  if (res.action === REMOVE) {
+    await removeDownloadedScummVM(api);
+    return;
+  }
+  if (res.action === CONVERT) {
+    await runConversion(api, (await originalSaveFiles()).map(file => ({ file })), prefs, originalDirs);
+    return;
+  }
   if (res.action === PICK) {
     await pickScummVM(api, prefs).catch(() => null);
     return;
@@ -1360,6 +1368,381 @@ async function configureEngine(api) {
   delete prefs.manual;   // chave antiga (0.2.3)
   delete prefs.toldAuto;
   await savePrefs(prefs);
+}
+
+// ---- saves do jogo original (game.exe): o ScummVM não lê esse formato
+/** pastas com saves do jogo original: a da versão Steam/GOG (%APPDATA%\The Longest Journey\Save) e as
+ *  antigas da Funcom (%APPDATA%\Funcom\TLJ <pasta do jogo>\Save); só as que têm algum arquivo */
+async function originalSavesDirs() {
+  const appData = process.env.APPDATA;
+  if (!appData) return [];
+  const dirs = [path.join(appData, 'The Longest Journey', 'Save')];
+  try {
+    for (const e of await fsp.readdir(path.join(appData, 'Funcom'), { withFileTypes: true })) {
+      if (e.isDirectory() && /^tlj\b/i.test(e.name)) dirs.push(path.join(appData, 'Funcom', e.name, 'Save'));
+    }
+  } catch (err) {
+    // sem a pasta antiga da Funcom
+  }
+  const found = [];
+  for (const d of dirs) {
+    if (await hasAnyFile(d, 1)) found.push(d);
+  }
+  return found;
+}
+
+/** na primeira vez que o jogo abre no ScummVM, se houver saves do jogo original: avisa que eles não
+ *  aparecem no ScummVM (e vice-versa) e onde continuam. Só uma vez. */
+async function warnOriginalSaves(api, prefs) {
+  if (prefs.toldOriginalSaves || typeof api.showDialog !== 'function') return;
+  const dirs = await originalSavesDirs().catch(() => []);
+  if (dirs.length === 0) return;
+  const OPEN = tr('openOriginalSavesFolder');
+  const CONTINUE = tr('continue');
+  const CONVERT = tr('convertOriginalSaves');
+  const buttons = [{ label: OPEN }, { label: tr('cancel') }, { label: CONVERT }, { label: CONTINUE, default: true }];
+  const res = await api.showDialog('info', tr('originalSavesTitle'), {
+    text: tr('originalSavesBody', { dir: dirs.join('\n'), option: tr('alwaysOriginal'), convert: CONVERT }),
+  }, buttons);
+  prefs.toldOriginalSaves = true;
+  await savePrefs(prefs);
+  const act = res ? res.action : undefined;
+  if (act === CONTINUE) return;
+  if (act === CONVERT) {
+    // converte e segue abrindo o jogo no ScummVM, já com os saves convertidos
+    await runConversion(api, (await originalSaveFiles()).map(file => ({ file })), prefs, dirs);
+    return;
+  }
+  if (act === OPEN) await openFolder(dirs[0]);
+  throw new util.UserCanceled();
+}
+
+// ---- conversão dos saves do jogo original para o ScummVM (cópias; os originais não mudam)
+const SLOTS_PER_PAGE = 9;   // a tela de saves do ScummVM mostra 9 por página
+/** primeiro slot para os convertidos: o começo da página seguinte à do último save do jogador, deixando
+ *  uma página vazia entre eles (como um TAB: a distância é sempre a mesma). Sem saves: slot 0. */
+function convertBaseSlot(usedSlots) {
+  if (!usedSlots.length) return 0;
+  const last = Math.max(...usedSlots);
+  return (Math.floor(last / SLOTS_PER_PAGE) + 2) * SLOTS_PER_PAGE;
+}
+const CONVERT_NOTIFICATION = 'tlj-convert-saves';
+const CONVERT_MARKS = 'tlj_saves_convertidos.json';   // quais saves do ScummVM a extensão gerou, e de onde
+
+async function loadMarks() {
+  try {
+    const m = JSON.parse(await fsp.readFile(path.join(dataDir(), CONVERT_MARKS), 'utf8'));
+    return (m && typeof m === 'object' && !Array.isArray(m)) ? m : {};
+  } catch (err) {
+    return {};
+  }
+}
+
+async function saveMarks(marks) {
+  await fsp.mkdir(dataDir(), { recursive: true });
+  await fsp.writeFile(path.join(dataDir(), CONVERT_MARKS), JSON.stringify(marks, null, 2));
+}
+
+/** SaveNN.tlj do jogo original nas pastas conhecidas (a pasta Save e as subpastas de perfil, como 01) */
+async function originalSaveFiles() {
+  const out = [];
+  const list = async d => { try { return await fsp.readdir(d, { withFileTypes: true }); } catch (err) { return []; } };
+  for (const dir of await originalSavesDirs().catch(() => [])) {
+    for (const e of await list(dir)) {
+      if (e.isFile() && saveconv.NATIVE_SAVE.test(e.name)) out.push(path.join(dir, e.name));
+      else if (e.isDirectory()) {
+        for (const f of await list(path.join(dir, e.name))) {
+          if (f.isFile() && saveconv.NATIVE_SAVE.test(f.name)) out.push(path.join(dir, e.name, f.name));
+        }
+      }
+    }
+  }
+  return out.sort();
+}
+
+/** nome que o ScummVM daria a um jogo novo, sem repetir um que já existe no scummvm.ini */
+function newTargetName(ini) {
+  const names = new Set(ini.sections.map(s => s.name.toLowerCase()));
+  let name = SCUMMVM_TARGET;
+  for (let n = 1; names.has(name.toLowerCase()); n++) name = `${SCUMMVM_TARGET}-vortex${n > 1 ? n : ''}`;
+  return name;
+}
+
+/** nome do jogo no scummvm.ini que o Vortex abre (sem alterar nada): o que já aponta para a pasta do jogo
+ *  ou o nome que ensureScummVMTarget vai dar. Os saves do ScummVM se chamam <nome>-NNN.tlj. */
+async function scummvmTargetName(exe, game) {
+  const cfg = exe ? await scummvmConfig(exe) : { file: IS_WIN
+    ? path.join(process.env.APPDATA || os.homedir(), 'ScummVM', 'scummvm.ini')
+    : path.join(process.env.XDG_CONFIG_HOME || path.join(os.homedir(), '.config'), 'scummvm', 'scummvm.ini') };
+  let text;
+  try { text = await fsp.readFile(cfg.file, 'utf8'); } catch (err) { text = ''; }
+  const ini = parseIni(text);
+  const shadow = path.join(dataDir(), SHADOW_DIR);
+  const ours = ini.sections.find(s => s.keys.gameid && s.keys.gameid.value === 'tlj' && s.keys.path
+    && [game, shadow].some(p => samePath(s.keys.path.value, p)));
+  return ours ? ours.name : newTargetName(ini);
+}
+
+/**
+ * Converte saves do jogo original para a pasta de saves do ScummVM. Nunca sobrescreve um save do
+ * jogador: só regrava a cópia que a própria extensão fez (se o original mudou desde então).
+ * items: [{ file, id? }] (id identifica a origem; padrão: o caminho do arquivo)
+ */
+async function convertSaves(api, items, prefs) {
+  const game = gamePath(api);
+  if (!game) throw new Error(tr('gameNotFound'));
+  prefs = prefs || await loadPrefs();
+  const exe = await findScummVM(prefs);
+  const dir = await scummvmSavesDir(exe);
+  const target = await scummvmTargetName(exe, game);
+  const G = new saveconv.Game(game);
+  const done = await loadMarks();
+  const res = { dir, target, converted: [], unchanged: [], failed: [] };
+  await fsp.mkdir(dir, { recursive: true });
+  const fileName = slot => `${target}-${String(slot).padStart(3, '0')}.tlj`;
+  const reserved = new Set(Object.keys(done).map(k => done[k].name));
+  const indexes = new Map();
+  const mine = new RegExp(`^${target.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}-(\\d{3})\\.tlj$`, 'i');
+  let names = [];
+  try { names = await fsp.readdir(dir); } catch (err) { names = []; }
+  const playerSlots = names.filter(n => mine.test(n) && !reserved.has(n)).map(n => parseInt(mine.exec(n)[1], 10));
+  let cursor = convertBaseSlot(playerSlots);
+  for (const { file, id: given } of items) {
+    const id = given || file;
+    const shown = path.basename(file);
+    try {
+      const raw = await fsp.readFile(file);
+      const stamp = crypto.createHash('sha1').update(raw).digest('hex');
+      const mark = done[id];
+      let name = null;
+      if (mark && mark.name.startsWith(`${target}-`)) {
+        const old = await statSafe(path.join(dir, mark.name));
+        // a cópia continua lá e ainda é a que a extensão gravou: fica no mesmo slot (ou nem regrava)
+        const ours = old && old.size === mark.size && Math.round(old.mtimeMs) === mark.mtime;
+        if (ours && mark.stamp === stamp) { res.unchanged.push(mark.name); continue; }
+        if (ours) name = mark.name;
+        else reserved.delete(mark.name);   // apagada ou substituída: ganha um slot novo pela regra da página
+      }
+      if (!name) {
+        const free = async slot => !reserved.has(fileName(slot)) && !await statSafe(path.join(dir, fileName(slot)));
+        for (let slot = cursor; !name && slot <= 999; slot++) if (await free(slot)) { name = fileName(slot); cursor = slot + 1; }
+        if (!name) throw new Error('no free ScummVM slot');
+      }
+      const d = path.dirname(file);
+      if (!indexes.has(d)) indexes.set(d, saveconv.readIndex(d));
+      const r = saveconv.convertSave(G, file, indexes.get(d));
+      const dest = path.join(dir, name);
+      await fsp.writeFile(`${dest}.vortex_tmp`, r.data);
+      await fsp.rename(`${dest}.vortex_tmp`, dest);
+      const st = await fsp.stat(dest);
+      done[id] = { name, stamp, size: st.size, mtime: Math.round(st.mtimeMs) };
+      reserved.add(name);
+      res.converted.push(name);
+      log('info', 'tlj: save do jogo original convertido para o ScummVM',
+          { from: file, to: dest, description: r.description, location: r.location, notes: r.notes });
+    } catch (err) {
+      res.failed.push(`${shown}: ${err.message}`);
+      log('warn', 'tlj: save do jogo original não convertido', { file, error: err.message });
+    }
+    await new Promise(resolve => setTimeout(resolve, 0));   // deixa o Vortex respirar entre um save e outro
+  }
+  await saveMarks(done);
+  return res;
+}
+
+/** converte com aviso de progresso e mostra o resultado (searched: pastas procuradas, para a mensagem
+ *  de "nenhum save encontrado") */
+async function runConversion(api, items, prefs, searched) {
+  if (!items.length) {
+    if (typeof api.showDialog === 'function') {
+      await api.showDialog('info', tr('convertSavesTitle'), {
+        text: tr('convertSavesNone', { dir: (searched || []).join('\n') }),
+      }, [{ label: tr('close'), default: true }]);
+    }
+    return { converted: [], unchanged: [], failed: [] };
+  }
+  if (typeof api.sendNotification === 'function') {
+    api.sendNotification({ id: CONVERT_NOTIFICATION, type: 'activity', message: tr('convertingSaves'), noDismiss: true });
+  }
+  let res;
+  try {
+    res = await convertSaves(api, items, prefs);
+  } catch (err) {
+    res = { failed: [err.message], converted: [], unchanged: [] };
+  } finally {
+    if (typeof api.dismissNotification === 'function') api.dismissNotification(CONVERT_NOTIFICATION);
+  }
+  if (typeof api.showDialog !== 'function') return res;
+  const parts = [];
+  if (res.converted.length) parts.push(tr('convertSavesDone', { count: res.converted.length, dir: res.dir,
+                                                         first: res.converted[0].replace(/\.tlj$/i, '') }));
+  if (res.unchanged.length) parts.push(tr('convertSavesUnchanged', { count: res.unchanged.length }));
+  if (res.failed.length) parts.push(tr('convertSavesFailed', { list: res.failed.join('\n') }));
+  const buttons = res.dir ? [{ label: tr('openSavesFolder') }] : [];
+  buttons.push({ label: tr('close'), default: true });
+  const r = await api.showDialog(res.converted.length || res.unchanged.length ? 'info' : 'error', tr('convertSavesTitle'),
+                                 { text: parts.join('\n\n') }, buttons);
+  if (res.dir && r && r.action === tr('openSavesFolder')) await openFolder(res.dir);
+  return res;
+}
+
+// ---- pasta de saves e remoção do ScummVM baixado
+/** scummvm.exe da cópia que a extensão baixou, se ela existir */
+function ownScummVM() {
+  return findFile(path.join(dataDir(), OWN_DIR), SCUMMVM_EXE, 3);
+}
+
+/** pasta de saves padrão do ScummVM (sem scummvm.ini que diga outra) */
+function defaultSavesDir() {
+  if (IS_WIN) {
+    return path.join(process.env.APPDATA || path.join(os.homedir(), 'AppData', 'Roaming'), 'ScummVM', 'Saved games');
+  }
+  if (process.platform === 'darwin') return path.join(os.homedir(), 'Documents', 'ScummVM Savegames');
+  return path.join(process.env.XDG_DATA_HOME || path.join(os.homedir(), '.local', 'share'), 'scummvm', 'saves');
+}
+
+/** pasta onde o ScummVM guarda os saves: a do scummvm.ini (do jogo ou geral), a do modo portátil
+ *  (ao lado do scummvm.exe) ou a padrão */
+async function scummvmSavesDir(exe) {
+  if (!exe) return defaultSavesDir();
+  const cfg = await scummvmConfig(exe);
+  let text;
+  try { text = await fsp.readFile(cfg.file, 'utf8'); } catch (err) { text = ''; }
+  const ini = parseIni(text);
+  const shadow = path.join(dataDir(), SHADOW_DIR);
+  const ours = ini.sections.find(s => s.keys.gameid && s.keys.gameid.value === 'tlj'
+    && ((s.keys.description && s.keys.description.value === OWN_DESCRIPTION)
+        || (s.keys.path && samePath(s.keys.path.value, shadow))));
+  const general = ini.sections.find(s => s.name.toLowerCase() === 'scummvm');
+  const custom = (ours && ours.keys.savepath && ours.keys.savepath.value)
+    || (general && general.keys.savepath && general.keys.savepath.value);
+  if (custom) return path.resolve(path.dirname(cfg.file), custom);
+  if (cfg.portable) return path.dirname(exe);
+  return defaultSavesDir();
+}
+
+async function openFolder(dir) {
+  try {
+    await fsp.mkdir(dir, { recursive: true });
+    Promise.resolve(util.opn(dir)).catch(() => null);
+  } catch (err) {
+    log('warn', 'tlj: não foi possível abrir a pasta', err.message);
+  }
+}
+
+/** apaga uma pasta nossa (a pasta-sombra, o ScummVM baixado) sem nunca entrar em links: junções e links
+ *  simbólicos saem só eles (as pastas do jogo continuam intactas) e apagar um hardlink não apaga o
+ *  arquivo do jogo. Por garantia, uma subpasta cujo caminho real fica fora da pasta também é tratada
+ *  como link (rmdir sem recursão: se ela tiver arquivos, falha em vez de apagar). */
+async function removeShadowDir(dir) {
+  const st = await lstatSafe(dir);
+  if (!st) return;
+  if (st.isSymbolicLink()) { await removeLink(dir); return; }
+  if (!st.isDirectory()) { await fsp.unlink(dir); return; }
+  const realDir = await fsp.realpath(dir);
+  const norm = (p) => (IS_WIN ? p.toLowerCase() : p);
+  for (const name of await fsp.readdir(dir)) {
+    const p = path.join(dir, name);
+    const l = await lstatSafe(p);
+    if (!l) continue;
+    if (l.isSymbolicLink()) {
+      await removeLink(p);
+    } else if (l.isDirectory()) {
+      const real = await fsp.realpath(p).catch(() => '');
+      if (real && norm(real).startsWith(norm(realDir + path.sep))) await removeShadowDir(p);
+      else await removeLink(p);
+    } else {
+      await fsp.unlink(p);
+    }
+  }
+  await fsp.rmdir(dir);
+}
+
+/** tira do scummvm.ini o jogo que a extensão cadastrou; um jogo do próprio jogador que apontava para a
+ *  pasta-sombra volta a apontar para a pasta do jogo. Devolve quantos jogos mudaram. */
+async function removeOwnTargets(cfgFile, game) {
+  let text;
+  try { text = await fsp.readFile(cfgFile, 'utf8'); } catch (err) { return 0; }
+  const eol = text.includes('\r\n') ? '\r\n' : '\n';
+  const ini = parseIni(text);
+  const lines = ini.lines.slice();
+  const heads = [];
+  lines.forEach((ln, i) => { if (/^\s*\[([^\]]+)\]\s*$/.test(ln)) heads.push(i); });
+  const shadow = path.join(dataDir(), SHADOW_DIR);
+  const drop = new Set();
+  let changed = 0;
+  ini.sections.forEach((sec, n) => {
+    if (!sec.keys.gameid || sec.keys.gameid.value !== 'tlj') return;
+    const end = n + 1 < heads.length ? heads[n + 1] : lines.length;
+    const mine = sec.keys.description && sec.keys.description.value === OWN_DESCRIPTION;
+    const inShadow = sec.keys.path && samePath(sec.keys.path.value, shadow);
+    if (!mine && !inShadow) return;
+    if (!mine) {
+      // jogo cadastrado pelo próprio jogador: só volta a apontar para a pasta do jogo
+      if (!game) return;
+      lines[sec.keys.path.line] = `path=${game}`;
+      changed++;
+      return;
+    }
+    changed++;
+    for (let i = heads[n]; i < end; i++) drop.add(i);
+  });
+  if (!changed) return 0;
+  const out = lines.filter((_, i) => !drop.has(i)).join(eol).replace(/(\r?\n){3,}/g, eol + eol);
+  await fsp.writeFile(cfgFile, out);
+  return changed;
+}
+
+/** "Remover o ScummVM baixado": apaga a cópia baixada, a pasta-sombra e o jogo que a extensão cadastrou
+ *  no scummvm.ini. Os saves ficam (fora do modo portátil eles estão em outra pasta). */
+async function removeDownloadedScummVM(api) {
+  const base = path.join(dataDir(), OWN_DIR);
+  const exe = await ownScummVM();
+  if (!exe) return false;
+  const cfg = await scummvmConfig(exe);
+  const saves = await scummvmSavesDir(exe);
+  const OPEN = tr('openSavesFolder');
+  if (cfg.portable) {
+    // modo portátil: configurações e saves estão dentro da pasta; nada é apagado
+    const res = await api.showDialog('info', tr('removeDownloadedScummvm'), {
+      text: tr('portableRemoveBody', { dir: base }),
+    }, [{ label: OPEN }, { label: tr('close'), default: true }]);
+    if (res && res.action === OPEN) await openFolder(base);
+    return false;
+  }
+  const shadow = path.join(dataDir(), SHADOW_DIR);
+  const REMOVE = tr('removeDownloadedScummvm');
+  const res = await api.showDialog('question', REMOVE, {
+    text: tr('removeScummvmBody', { dir: base, shadow, saves }),
+  }, [{ label: tr('cancel') }, { label: REMOVE, default: true }]);
+  if (!res || res.action !== REMOVE) return false;
+  const trash = path.join(dataDir(), 'ScummVM_remover');
+  try {
+    await removeShadowDir(trash);   // sobra de uma tentativa anterior (pasta só nossa)
+    await fsp.rename(base, trash);   // no Windows falha se o ScummVM estiver aberto, e aí nada é apagado
+  } catch (err) {
+    if (typeof api.showErrorNotification === 'function') {
+      api.showErrorNotification(tr('scummvmRemoveFailed'), err, { allowReport: false });
+    }
+    return false;
+  }
+  await removeOwnTargets(cfg.file, gamePath(api)).catch(err => log('warn', 'tlj: limpar o scummvm.ini', err.message));
+  await removeShadowDir(shadow).catch(err => log('warn', 'tlj: apagar a pasta-sombra', err.message));
+  await removeShadowDir(trash).catch(err => log('warn', 'tlj: apagar o ScummVM', err.message));
+  const prefs = await loadPrefs();
+  const rel = prefs.scummvmExe ? path.relative(base, prefs.scummvmExe) : '';
+  if (rel && !rel.startsWith('..') && !path.isAbsolute(rel)) {
+    delete prefs.scummvmExe;
+    await savePrefs(prefs);
+  }
+  if (typeof api.sendNotification === 'function') {
+    api.sendNotification({
+      id: 'tlj-scummvm-removed', type: 'success',
+      message: tr('scummvmRemoved', { saves }),
+      actions: [{ title: OPEN, action: (dismiss) => { dismiss(); openFolder(saves); } }],
+    });
+  }
+  return true;
 }
 
 /** depois de cada deploy (se o jogador já usa o ScummVM pelo Vortex): atualiza a pasta-sombra e o
@@ -1381,7 +1764,8 @@ async function refreshShadow(api, profileId) {
 // onde abrir o jogo). Agora o "id" fixo faz cada versão nova substituir a anterior, e esta versão acha as
 // cópias antigas que já existem e oferece removê-las.
 const EXT_NAME = 'The Longest Journey';
-const EXT_AUTHOR = 'Nateus009';
+const EXT_AUTHOR = 'mateusmoa';
+const EXT_LEGACY_AUTHOR = 'Nateus009';
 const EXT_SIGNATURE = "const GAME_ID = 'thelongestjourney';";
 
 function versionCmp(a, b) {
@@ -1405,7 +1789,7 @@ async function findOtherCopies(pluginsDir, myDir) {
     if (samePath(dir, myDir)) continue;
     let info;
     try { info = JSON.parse(await fsp.readFile(path.join(dir, 'info.json'), 'utf8')); } catch (err) { continue; }
-    if (!info || info.name !== EXT_NAME || info.author !== EXT_AUTHOR) continue;
+    if (!info || info.name !== EXT_NAME || ![EXT_AUTHOR, EXT_LEGACY_AUTHOR].includes(info.author)) continue;
     let code = '';
     try { code = await fsp.readFile(path.join(dir, 'index.js'), 'utf8'); } catch (err) { continue; }
     if (!code.includes(EXT_SIGNATURE)) continue;
@@ -1426,11 +1810,9 @@ async function removeCopies(api, copies) {
   if (typeof api.sendNotification !== 'function') return failed;
   api.sendNotification(failed.length === 0
     ? { id: 'tlj-copias-removidas', type: 'success',
-        message: tr('Cópias antigas da extensão The Longest Journey removidas. Feche e abra o Vortex de novo para valer.',
-                    'Old copies of The Longest Journey extension removed. Close and reopen Vortex for this to take effect.') }
+        message: tr('oldCopiesRemoved') }
     : { id: 'tlj-copias-removidas', type: 'error',
-        message: tr(`Não consegui remover: ${failed.join(', ')}. Remova pela aba Extensions e reinicie o Vortex.`,
-                    `Could not remove: ${failed.join(', ')}. Remove them on the Extensions page and restart Vortex.`) });
+        message: tr('oldCopiesRemoveFailed', { files: failed.join(', ') }) });
   return failed;
 }
 
@@ -1445,15 +1827,9 @@ async function checkOtherCopies(api, myDir = __dirname) {
     api.sendNotification({
       id: 'tlj-copias-antigas',
       type: 'warning',
-      message: tr(`Há ${n} cópia(s) antiga(s) da extensão The Longest Journey carregada(s) junto com esta `
-        + `(${versions}). Elas também decidem onde o jogo abre e causam erros. `
-        + 'Remova-as e reinicie o Vortex.',
-      (n === 1 ? 'An old copy of The Longest Journey extension is' : `${n} old copies of The Longest Journey extension are`)
-        + ` loaded along with this one (${versions}). `
-        + (n === 1 ? 'It also decides where the game starts and causes errors. Remove it and restart Vortex.'
-                   : 'They also decide where the game starts and cause errors. Remove them and restart Vortex.')),
+      message: tr('oldCopiesDetected', { count: n, versions }),
       actions: [{
-        title: tr('Remover cópias antigas', 'Remove old copies'),
+        title: tr('removeOldCopies'),
         action: (dismiss) => { dismiss(); removeCopies(api, others).catch(err => log('warn', 'tlj: remover cópias', err.message)); },
       }],
     });
@@ -1492,7 +1868,7 @@ function main(context) {
     supportedTools: [
       {
         id: 'tlj-configure',
-        name: tr('Configurações (configure.exe)', 'Settings (configure.exe)'),
+        name: tr('settingsTool'),
         executable: () => 'configure.exe',
         requiredFiles: ['configure.exe'],
         relative: true,
@@ -1539,5 +1915,9 @@ module.exports = {
                 ensureScummVMTarget, isTljLaunch, makeStartHook, loadPrefs, savePrefs, parseIni,
                 downloadScummVM, configureEngine, refreshShadow, SHADOW_DIR, decideEngine, enabledModsByEngine,
                 scanEngine, engineOfFiles, findOtherCopies, checkOtherCopies, removeCopies, versionCmp, cleanLegacyPrefs,
-                pickLanguage, systemLocale, tr },
+                pickLanguage, systemLocale, tr, ownScummVM, defaultSavesDir, scummvmSavesDir, openFolder,
+                removeShadowDir, removeOwnTargets, removeDownloadedScummVM, obtainScummVM, OWN_DIR, OWN_DESCRIPTION,
+                originalSavesDirs, warnOriginalSaves, originalSavesTarget, originalSaveFiles, convertSaves,
+                runConversion, scummvmTargetName, convertBaseSlot,
+                setSaveConverter: impl => { saveconv = impl; } },
 };

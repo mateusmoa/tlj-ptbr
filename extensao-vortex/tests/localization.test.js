@@ -40,7 +40,7 @@ test('language priority, regional codes, system fallback and unsupported languag
 test('all user-facing keys and parameters are present in all catalogs', () => {
   const used = [...new Set([...source.matchAll(/\btr\('([^']+)'/g)].map(m => m[1]))].sort();
   assert.deepEqual(used, Object.keys(en).sort());
-  assert.equal(used.length, 98);
+  assert.equal(used.length, 99);
   for (const lang of languages) {
     const catalog = require(`../locales/${lang}.json`);
     assert.deepEqual(Object.keys(catalog).sort(), used, lang);
@@ -194,6 +194,133 @@ const u32 = n => { const b = Buffer.alloc(4); b.writeUInt32LE(n); return b; };
 const str = s => { const b = Buffer.from(s); return Buffer.concat([u16(b.length), b]); };
 const sha1 = b => crypto.createHash('sha1').update(b).digest();
 const patch = entries => Buffer.concat([Buffer.from('TLJPTBR\x01', 'latin1'), str('test'), str('Test'), u32(entries.length), ...entries]);
+
+// game.exe mínimo com o bitmap 147 em .rsrc; `rva` diz para onde o recurso aponta (o da Steam aponta para fora)
+function fakeExe(rva, size = 8) {
+  const RSRC = 0x200, VA = 0x1000;
+  const b = Buffer.alloc(RSRC + 0x60);
+  b.writeUInt16LE(0x5A4D, 0); b.writeUInt32LE(0x40, 60);
+  b.writeUInt32LE(0x00004550, 0x40); b.writeUInt16LE(1, 0x46); b.writeUInt16LE(0, 0x54);
+  b.write('.rsrc', 0x58, 'ascii'); b.writeUInt32LE(0x60, 0x58 + 8); b.writeUInt32LE(VA, 0x58 + 12);
+  b.writeUInt32LE(0x60, 0x58 + 16); b.writeUInt32LE(RSRC, 0x58 + 20);
+  const dir = (rel, id, next) => { b.writeUInt16LE(1, RSRC + rel + 14); b.writeUInt32LE(id, RSRC + rel + 16); b.writeUInt32LE(next, RSRC + rel + 20); };
+  dir(0x00, 2, 0x80000000 + 0x18);        // RT_BITMAP
+  dir(0x18, 147, 0x80000000 + 0x30);      // bitmap 147
+  dir(0x30, 0x409, 0x48);                 // idioma -> dados
+  b.writeUInt32LE(rva === undefined ? VA + 0x58 : rva, RSRC + 0x48); b.writeUInt32LE(size, RSRC + 0x4C);
+  b.write('BMPDATA!', RSRC + 0x58, 'ascii');
+  return b;
+}
+
+test('game.exe dialog bitmap check (Steam game.exe points bitmap 147 outside the file)', () => {
+  const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'tlj-pe-'));
+  try {
+    const { internals: i } = harness('en', temp);
+    assert.equal(i.invalidDialogBitmap(fakeExe()), false);              // GOG: bitmap dentro do arquivo
+    assert.equal(i.invalidDialogBitmap(fakeExe(0x100000)), true);       // Steam: aponta para fora
+    assert.equal(i.invalidDialogBitmap(fakeExe(undefined, 0)), true);   // tamanho zero
+    assert.equal(i.invalidDialogBitmap(fakeExe().subarray(0, 0x100)), false);   // sem recursos legíveis
+    assert.equal(i.invalidDialogBitmap(Buffer.from('not an exe at all, really')), false);
+    assert.equal(i.invalidDialogBitmap(null), false);
+  } finally { fs.rmSync(temp, { recursive: true, force: true }); }
+});
+
+test('patch operation 6 replaces a file inside the .xarc by name, or adds it when this version lacks it', async () => {
+  const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'tlj-member-'));
+  try {
+    const { internals: i, game, installers } = harness('en', temp);
+    // .xrc com um nó só (raiz, sem filhos) + arquivos internos
+    const xrc = Buffer.concat([Buffer.from([1, 0]), u16(0), str('Root'), u32(0), u16(0), u16(0)]);
+    const xarc = (files) => {
+      const table = Buffer.concat(files.map(([n, b, f]) => Buffer.concat([Buffer.from(n), Buffer.from([0]), u32(b.length), u32(f || 0)])));
+      return Buffer.concat([u32(1), u32(files.length), u32(12 + table.length), table, ...files.map(f => f[1])]);
+    };
+    const gog = xarc([['a.xrc', xrc], ['fala.isn', Buffer.from('english voice'), 1], ['x.xmg', Buffer.from('img')]]);
+    const want = xarc([['a.xrc', xrc], ['fala.isn', Buffer.from('polski glos!!'), 1], ['x.xmg', Buffer.from('img')]]);
+    const crc = b => i.crc32(b);
+    const op6 = (name, flag) => ({ node: 0, type: 0, sub: 0, op: 6, aux: flag, crcOrig: crc(Buffer.from('english voice')),
+      crcKeep: crc(Buffer.from(name.toLowerCase())), payload: Buffer.concat([u16(name.length), Buffer.from(name), Buffer.from('polski glos!!')]) });
+    const entry = (edits) => ({ kind: 1, path: 'a.xarc', shaEn: sha1(gog), sizeEn: gog.length, shaOut: sha1(want), sizeOut: want.length,
+      nodeCount: 1, edits });
+    // GOG: troca no lugar
+    let r = i.applyXarc(gog, entry([op6('fala.isn', 1)]));
+    assert.equal(r.status, 'original');
+    assert.ok(r.data.equals(want));
+    // outra ordem e nome em maiúsculas: acha pelo nome
+    const other = xarc([['x.xmg', Buffer.from('img')], ['FALA.ISN', Buffer.from('english voice'), 1], ['a.xrc', xrc]]);
+    r = i.applyXarc(other, entry([op6('fala.isn', 1)]));
+    assert.ok(r.data.equals(xarc([['x.xmg', Buffer.from('img')], ['FALA.ISN', Buffer.from('polski glos!!'), 1], ['a.xrc', xrc]])));
+    // Steam: o .isn não existe (ela usa .ovs solto) -> entra no fim, com a flag do patch
+    const steam = xarc([['a.xrc', xrc], ['x.xmg', Buffer.from('img')]]);
+    r = i.applyXarc(steam, entry([op6('fala.isn', 1)]));
+    assert.equal(r.status, 'divergente');
+    assert.ok(r.data.equals(xarc([['a.xrc', xrc], ['x.xmg', Buffer.from('img')], ['fala.isn', Buffer.from('polski glos!!'), 1]])));
+    // nome que não confere com o CRC, ou apontando para o .xrc: recusa
+    const bad = op6('fala.isn', 1); bad.crcKeep ^= 1;
+    assert.throws(() => i.applyXarc(gog, entry([bad])), /different|diferente/);
+    assert.throws(() => i.applyXarc(gog, entry([op6('a.xrc', 0)])), /different|diferente/);
+
+    // dublagem com .iss num jogo que usa .ovs (Steam/DVD): o mod fica só para o ScummVM
+    fs.mkdirSync(path.join(game, '19', '00', 'xarc'), { recursive: true });
+    fs.writeFileSync(path.join(game, '19', '00', 'xarc', '0000000000.ovs'), 'ogg');
+    let res = await installers['tlj-root-files'].install(['LEIA-ME.txt', '19/00/xarc/0000000000.iss'], temp, 'thelongestjourney', null, null, false, 'Dub.zip');
+    assert.equal(res.instructions.find(x => x.type === 'attribute').value, 'scummvm');
+    assert.ok(!res.instructions.some(x => x.source === 'LEIA-ME.txt'));
+    // na versão com .iss (GOG), funciona nos dois
+    fs.rmSync(path.join(game, '19', '00', 'xarc', '0000000000.ovs'));
+    fs.writeFileSync(path.join(game, '19', '00', 'xarc', '0000000000.iss'), 'iss');
+    res = await installers['tlj-root-files'].install(['19/00/xarc/0000000000.iss'], temp, 'thelongestjourney', null, null, false, 'Dub.zip');
+    assert.equal(res.instructions.find(x => x.type === 'attribute').value, 'both');
+  } finally { fs.rmSync(temp, { recursive: true, force: true }); }
+});
+
+test('official chapters.ini (Polish): ScummVM uses the game folder and detects the language itself',
+  { skip: !process.env.TLJ_GAME_DIR || !process.env.TLJ_PL_DIR }, async () => {
+    const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'tlj-pl-'));
+    try {
+      const { internals: i, game } = harness('en', temp);
+      fs.copyFileSync(path.join(process.env.TLJ_GAME_DIR, 'x.xarc'), path.join(game, 'x.xarc'));
+      const en = fs.readFileSync(path.join(process.env.TLJ_GAME_DIR, 'chapters.ini'));
+      const pl = fs.readFileSync(path.join(process.env.TLJ_PL_DIR, 'chapters.ini'));
+      // tradução PT-BR: chapters.ini desconhecido -> pasta-sombra com o original
+      fs.writeFileSync(path.join(game, 'chapters.ini'), 'traduzido');
+      fs.writeFileSync(path.join(game, 'chapters.ini.vortex_backup'), en);
+      assert.equal(await i.scummvmKnownVersion(game), null);
+      assert.equal(await i.scummvmGamePath(game), path.join(temp, 'thelongestjourney', i.SHADOW_DIR));
+      // pacote polonês: o ScummVM reconhece "Polish 4CD" direto na pasta do jogo
+      fs.writeFileSync(path.join(game, 'chapters.ini'), pl);
+      assert.equal(await i.scummvmKnownVersion(game), '6abc5c38e6e31face4b675355b117620');
+      assert.equal(await i.scummvmGamePath(game), game);
+      // Steam: o ScummVM vê "Polish 4CD" e tentaria ler o bitmap 147 do game.exe dela -> pasta auxiliar sem o exe
+      const shadow = path.join(temp, 'thelongestjourney', i.SHADOW_DIR);
+      fs.writeFileSync(path.join(shadow, 'game.exe'), 'velho');   // sobra de uma sincronização anterior
+      fs.writeFileSync(path.join(game, 'game.exe'), fakeExe(0x100000));
+      assert.equal(await i.scummvmGamePath(game), shadow);
+      assert.ok(fs.readFileSync(path.join(shadow, 'chapters.ini')).equals(pl));
+      assert.ok(!fs.existsSync(path.join(shadow, 'game.exe')));
+      assert.equal(await i.scummvmKnownVersion(shadow), '6abc5c38e6e31face4b675355b117620');
+      const cfgSteam = path.join(temp, 'scummvm-steam.ini');
+      fs.writeFileSync(cfgSteam, `[tlj-win]\r\nlanguage=en\r\ngameid=tlj\r\npath=${game}\r\n`);
+      await i.ensureScummVMTarget(cfgSteam, shadow, game);
+      const outSteam = fs.readFileSync(cfgSteam, 'utf8');
+      assert.ok(!/language=/.test(outSteam) && outSteam.includes(`path=${shadow}`));
+      // GOG: o game.exe tem o bitmap -> pasta do jogo
+      fs.writeFileSync(path.join(game, 'game.exe'), fakeExe());
+      assert.equal(await i.scummvmGamePath(game), game);
+      fs.rmSync(path.join(game, 'game.exe'));
+      const cfg = path.join(temp, 'ScummVM', 'scummvm.ini');
+      fs.mkdirSync(path.dirname(cfg), { recursive: true });
+      fs.writeFileSync(cfg, `[scummvm]\r\n\r\n[tlj-win]\r\ndescription=The Longest Journey\r\nlanguage=en\r\ngameid=tlj\r\npath=${game}\r\n`);
+      assert.equal(await i.ensureScummVMTarget(cfg, game, game), 'tlj-win');
+      const out = fs.readFileSync(cfg, 'utf8');
+      assert.ok(!/language=/.test(out) && out.includes(`gameid=tlj\r\npath=${game}`));
+      // de volta ao inglês: nada a mudar
+      fs.writeFileSync(path.join(game, 'chapters.ini'), en);
+      fs.writeFileSync(cfg, `[tlj-win]\r\nlanguage=en\r\ngameid=tlj\r\npath=${game}\r\n`);
+      await i.ensureScummVMTarget(cfg, game, game);
+      assert.ok(fs.readFileSync(cfg, 'utf8').includes('language=en'));
+    } finally { fs.rmSync(temp, { recursive: true, force: true }); }
+  });
 
 for (const lang of languages) {
   test(`${lang}: registered tools, dialogs, button actions, installers and notifications`, async () => {

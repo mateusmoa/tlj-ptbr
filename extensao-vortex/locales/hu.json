@@ -11,6 +11,7 @@
   "structureUnexpected": "váratlan szerkezet (csomópontok: {{count}}, várt: {{expected}})",
   "nodeMissing": "hiányzó csomópont",
   "nodeType": "váratlan csomóponttípus",
+  "memberMismatch": "egy fájl az .xarc-on belül eltér attól, amit a javítás vár",
   "speechInvalid": "érvénytelen párbeszédsor",
   "speechData": "váratlan párbeszédsor-adatok",
   "imageTextInvalid": "érvénytelen képszöveg",

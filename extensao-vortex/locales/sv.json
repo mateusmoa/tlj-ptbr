@@ -11,6 +11,7 @@
   "structureUnexpected": "oväntad struktur ({{count}} noder, förväntat: {{expected}})",
   "nodeMissing": "nod saknas",
   "nodeType": "oväntad nodtyp",
+  "memberMismatch": "en fil inuti .xarc skiljer sig från vad patchen förväntar sig",
   "speechInvalid": "ogiltig dialograd",
   "speechData": "oväntade data i dialograden",
   "imageTextInvalid": "ogiltig bildtext",

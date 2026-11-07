@@ -22,6 +22,11 @@ ou inteiro dentro de um gzip (versões anteriores; começa com `1F 8B`).
         op 2 = texto de imagem (t13/s4): troca o texto u16+bytes no offset aux; mantém cabeçalho e final
         op 3 = nome do nó (ex.: nome que aparece ao passar o mouse)
         op 4 = dados inteiros do nó (ajustes de layout)
+        op 6 = arquivo de dentro do .xarc (ex.: falas .isn embutidas): payload = u16 tamanho + nome + conteúdo;
+               troca o arquivo de mesmo nome (sem diferenciar maiúsculas) ou, se a versão do jogo não o tem
+               (a Steam usa .ovs soltos no lugar), acrescenta no fim da tabela com a flag aux;
+               crc_mantido = CRC32 do nome em minúsculas, crc_orig = CRC32 do conteúdo original (ou 0),
+               no/tipo/subtipo = 0 (desde a extensão 0.3.2)
 
     tipo 2 (arquivo inteiro):
       sha1_original 20 bytes | sha1_resultado 20 bytes | conteudo: u32 + bytes

@@ -11,6 +11,7 @@
   "structureUnexpected": "estrutura diferente da esperada ({{count}} nós, esperado {{expected}})",
   "nodeMissing": "nó inexistente",
   "nodeType": "tipo de nó diferente do esperado",
+  "memberMismatch": "um arquivo de dentro do .xarc é diferente do esperado",
   "speechInvalid": "fala inválida",
   "speechData": "dados da fala diferentes do esperado",
   "imageTextInvalid": "texto de imagem inválido",

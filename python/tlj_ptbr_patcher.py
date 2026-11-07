@@ -41,6 +41,7 @@ STEAM_APP = "6310"
 GOG_APP = "1207658794"
 
 OP_SPEECH, OP_IMGTEXT, OP_RENAME, OP_DATA = 1, 2, 3, 4
+OP_MEMBER = 6      # arquivo de dentro do .xarc (ex.: falas .isn embutidas): troca pelo nome ou acrescenta
 KIND_XARC, KIND_FILE = 1, 2
 
 
@@ -214,7 +215,29 @@ def apply_xarc(buf, entry):
                          % (len(nodes), entry.node_count))
     reps = []      # (inicio, fim, bytes)
     others = 0
+    trocas = {}    # índice do arquivo interno -> bytes novos (OP_MEMBER)
+    novos = []     # (nome, flag, bytes) que não existiam nesta versão do jogo (ex.: Steam): vão no fim
     for ed in entry.edits:
+        if ed.op == OP_MEMBER:
+            # payload = u16 tamanho + nome + conteúdo; crc_keep = crc do nome em minúsculas; aux = flag
+            if len(ed.payload) < 2:
+                raise PatchError("arquivo interno inválido no patch")
+            nl = struct.unpack_from("<H", ed.payload, 0)[0]
+            nome, novo = ed.payload[2:2 + nl], ed.payload[2 + nl:]
+            if len(nome) != nl or crc32(nome.lower()) != ed.crc_keep:
+                raise PatchError("arquivo interno inválido no patch")
+            idx = next((i for i, m in enumerate(members) if m[0].lower() == nome.lower()), None)
+            if idx is None:
+                novos.append((nome, ed.aux, novo))
+                continue
+            if idx == xi:
+                raise PatchError("arquivo interno do .xarc diferente do esperado")
+            _, _, mo, ml = members[idx]
+            cur = buf[mo:mo + ml]
+            if cur != novo and crc32(cur) != ed.crc_orig:
+                others += 1
+            trocas[idx] = novo
+            continue
         if ed.node >= len(nodes):
             raise PatchError("nó inexistente")
         t, s, no, nl, do, dl = nodes[ed.node]
@@ -269,14 +292,18 @@ def apply_xarc(buf, entry):
         pos = b
     parts.append(xrc[pos:])
     new_xrc = b"".join(parts)
-    # remonta o .xarc (mesma ordem, só muda o tamanho do .xrc)
+    # remonta o .xarc (mesma ordem; mudam o .xrc e os arquivos internos trocados; os novos vão no fim)
+    trocas[xi] = new_xrc
     table = b""
     for i, (name, fl, off, ln) in enumerate(members):
-        table += name + b"\x00" + struct.pack("<II", len(new_xrc) if i == xi else ln, fl)
+        table += name + b"\x00" + struct.pack("<II", len(trocas[i]) if i in trocas else ln, fl)
+    for nome, fl, novo in novos:
+        table += nome + b"\x00" + struct.pack("<II", len(novo), fl)
     first = 12 + len(table)
-    out = [struct.pack("<III", version, len(members), first), table]
+    out = [struct.pack("<III", version, len(members) + len(novos), first), table]
     for i, (name, fl, off, ln) in enumerate(members):
-        out.append(new_xrc if i == xi else buf[off:off + ln])
+        out.append(trocas[i] if i in trocas else buf[off:off + ln])
+    out += [novo for _n, _f, novo in novos]
     res = b"".join(out)
     ok = (sha1(res) == entry.sha_out and len(res) == entry.size_out)
     if is_orig:

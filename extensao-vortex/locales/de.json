@@ -11,6 +11,7 @@
   "structureUnexpected": "unerwartete Struktur ({{count}} Knoten, erwartet: {{expected}})",
   "nodeMissing": "fehlender Knoten",
   "nodeType": "unerwarteter Knotentyp",
+  "memberMismatch": "eine Datei im .xarc entspricht nicht dem, was der Patch erwartet",
   "speechInvalid": "ungültige Dialogzeile",
   "speechData": "unerwartete Daten der Dialogzeile",
   "imageTextInvalid": "ungültiger Bildtext",

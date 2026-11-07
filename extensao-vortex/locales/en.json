@@ -11,6 +11,7 @@
   "structureUnexpected": "unexpected structure ({{count}} nodes, expected {{expected}})",
   "nodeMissing": "missing node",
   "nodeType": "unexpected node type",
+  "memberMismatch": "a file inside the .xarc is different from what the patch expects",
   "speechInvalid": "invalid dialogue line",
   "speechData": "unexpected dialogue line data",
   "imageTextInvalid": "invalid image text",

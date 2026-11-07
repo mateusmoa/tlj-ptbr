@@ -11,6 +11,7 @@
   "structureUnexpected": "neočekávaná struktura (počet uzlů: {{count}}, očekáváno: {{expected}})",
   "nodeMissing": "chybějící uzel",
   "nodeType": "neočekávaný typ uzlu",
+  "memberMismatch": "soubor uvnitř .xarc neodpovídá tomu, co patch očekává",
   "speechInvalid": "neplatná replika dialogu",
   "speechData": "neočekávaná data repliky dialogu",
   "imageTextInvalid": "neplatný text obrázku",

@@ -11,6 +11,7 @@
   "structureUnexpected": "结构与预期不符（{{count}} 个节点，预期 {{expected}} 个）",
   "nodeMissing": "缺少节点",
   "nodeType": "节点类型与预期不符",
+  "memberMismatch": ".xarc 内的某个文件与补丁预期的不同",
   "speechInvalid": "无效的对白",
   "speechData": "对白数据与预期不符",
   "imageTextInvalid": "无效的图像文字",

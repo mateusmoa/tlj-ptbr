@@ -72,6 +72,10 @@ const tr = (key, values) => translate(pickLanguage(vortexLanguage(), systemLocal
 const MAGIC = Buffer.from('TLJPTBR\u0001', 'latin1');
 const KIND_XARC = 1, KIND_FILE = 2;
 const OP_SPEECH = 1, OP_IMGTEXT = 2, OP_RENAME = 3, OP_DATA = 4;
+// arquivo de dentro do .xarc (ex.: falas .isn embutidas): troca pelo nome ou, se a versão do jogo não o tem
+// (a Steam usa .ovs soltos), acrescenta no fim. payload = u16 + nome + conteúdo; crcKeep = crc do nome em
+// minúsculas; aux = flag do arquivo na tabela do .xarc
+const OP_MEMBER = 6;
 
 class PatchError extends Error {}
 
@@ -190,8 +194,24 @@ function applyXarc(buf, e) {
     throw new PatchError(tr('structureUnexpected', { count: nodes.length, expected: e.nodeCount }));
   }
   const reps = [];
+  const swaps = new Map();   // índice do arquivo interno -> bytes novos (OP_MEMBER)
+  const added = [];          // arquivos internos que esta versão do jogo não tinha
   let others = 0;
   for (const ed of e.edits) {
+    if (ed.op === OP_MEMBER) {
+      if (ed.payload.length < 2) throw new PatchError(tr('memberMismatch'));
+      const nl = ed.payload.readUInt16LE(0);
+      const name = ed.payload.subarray(2, 2 + nl), content = ed.payload.subarray(2 + nl);
+      const low = name.toString('latin1').toLowerCase();
+      if (name.length !== nl || crc32(Buffer.from(low, 'latin1')) !== ed.crcKeep) throw new PatchError(tr('memberMismatch'));
+      const idx = members.findIndex(m => m.name.toString('latin1').toLowerCase() === low);
+      if (idx === xi) throw new PatchError(tr('memberMismatch'));
+      if (idx < 0) { added.push({ name, flag: ed.aux, content }); continue; }
+      const cur = buf.subarray(members[idx].off, members[idx].off + members[idx].len);
+      if (!cur.equals(content) && crc32(cur) !== ed.crcOrig) others++;
+      swaps.set(idx, content);
+      continue;
+    }
     const nd = nodes[ed.node];
     if (nd === undefined) throw new PatchError(tr('nodeMissing'));
     if (nd.type !== ed.type || nd.sub !== ed.sub) throw new PatchError(tr('nodeType'));
@@ -239,14 +259,16 @@ function applyXarc(buf, e) {
     pos = b;
   }
   parts.push(xrc.subarray(pos));
-  const newXrc = Buffer.concat(parts);
+  swaps.set(xi, Buffer.concat(parts));
   const table = [];
   members.forEach((m, i) => {
-    table.push(m.name, Buffer.from([0]), le32(i === xi ? newXrc.length : m.len), le32(m.flag));
+    table.push(m.name, Buffer.from([0]), le32(swaps.has(i) ? swaps.get(i).length : m.len), le32(m.flag));
   });
+  for (const a of added) table.push(a.name, Buffer.from([0]), le32(a.content.length), le32(a.flag));
   const tableBuf = Buffer.concat(table);
-  const out = [le32(version), le32(members.length), le32(12 + tableBuf.length), tableBuf];
-  members.forEach((m, i) => out.push(i === xi ? newXrc : buf.subarray(m.off, m.off + m.len)));
+  const out = [le32(version), le32(members.length + added.length), le32(12 + tableBuf.length), tableBuf];
+  members.forEach((m, i) => out.push(swaps.has(i) ? swaps.get(i) : buf.subarray(m.off, m.off + m.len)));
+  for (const a of added) out.push(a.content);
   const res = Buffer.concat(out);
   const ok = sha1(res).equals(e.shaOut) && res.length === e.sizeOut;
   if (isOrig) {
@@ -441,7 +463,7 @@ const ROOT_DIR = /^([0-9a-f]{2}|global|static)$/i;
 const ROOT_FILE = /^(chapters\.ini|language\.ini|gui\.ini|w_world\.ini|x\.xarc)$/i;
 // arquivos do próprio jogo, que um mod substitui com o mesmo nome (.xarc, vídeos .bbb/.sss, sons .iss/.ovs),
 // p.ex. os pacotes de vídeos em HD (FMV Pack) do TLJ HD Mod
-const ROOT_ASSET = /\.(xarc|bbb|sss|iss|ovs)$/i;
+const ROOT_ASSET = /\.(xarc|bbb|sss|ssn|iss|ovs)$/i;
 // leia-me, imagens de divulgação etc. soltos na raiz do mod não vão para a pasta do jogo
 const DOC_EXT = /\.(txt|md|pdf|nfo|url|html?|rtf|docx?|jpe?g|png|gif|bmp|webp)$/i;
 
@@ -461,6 +483,18 @@ function testRootMod(files, gameId) {
     && !files.some(f => path.basename(f).toLowerCase().endsWith('.tljpatch'))
     && files.some(f => rootIndex(f) >= 0);
   return Promise.resolve({ supported, requiredFiles: [] });
+}
+
+/** sons .iss (ex.: uma dublagem tirada da versão 4CD/GOG) numa versão do jogo que usa .ovs (Steam/DVD):
+ *  o game.exe dela toca os .ovs; o ScummVM procura o .iss antes do .ovs, então o mod é só do ScummVM */
+async function issOverOvs(game, dests, cache) {
+  if (!game) return false;
+  const iss = dests.filter(d => /\.iss$/i.test(d)).slice(0, 40);
+  for (const d of iss) {
+    const ovs = await resolveCi(game, d.replace(/\.iss$/i, '.ovs'), cache);
+    if (await statSafe(ovs.abs)) return true;
+  }
+  return false;
 }
 
 function makeInstallRootMod(api) {
@@ -490,7 +524,8 @@ function makeInstallRootMod(api) {
       const dest = game ? (await resolveCi(game, rel, cache)).rel : rel.split('/').join(path.sep);
       instructions.push({ type: 'copy', source: f, destination: dest });
     }
-    const engine = engineOfFiles(instructions.map(i => i.destination));
+    let engine = engineOfFiles(instructions.map(i => i.destination));
+    if (engine === 'both' && await issOverOvs(game, instructions.map(i => i.destination), cache)) engine = 'scummvm';
     instructions.push({ type: 'attribute', key: ENGINE_ATTR, value: engine });
     notifyIdentified(api, engine, archivePath, destinationPath);
     return { instructions };
@@ -994,14 +1029,15 @@ async function removeLink(p) {
   try { await fsp.unlink(p); } catch (err) { await fsp.rmdir(p); }   // junção do Windows sai com rmdir; nunca recursivo
 }
 
-/** espelha a pasta do jogo em `shadow` com links, trocando só o chapters.ini pelo original */
-async function syncShadow(game, shadow, chaptersOrig) {
+/** espelha a pasta do jogo em `shadow` com links e uma cópia do chapters.ini escolhido */
+async function syncShadow(game, shadow, chaptersOrig, omitExeResources = false) {
   await fsp.mkdir(shadow, { recursive: true });
   const keyOf = (n) => (IS_WIN ? n.toLowerCase() : n);
   const keep = new Set([keyOf('chapters.ini')]);
   for (const e of await fsp.readdir(game, { withFileTypes: true })) {
     const low = e.name.toLowerCase();
     if (low === 'chapters.ini' || low.endsWith(BACKUP_TAG) || low === '_backup_traducao_ptbr') continue;
+    if (omitExeResources && (low === 'game.exe' || low === 'game.dll')) continue;
     const from = path.join(game, e.name);
     const to = path.join(shadow, e.name);
     const st = await statSafe(from);
@@ -1051,9 +1087,113 @@ async function syncShadow(game, shadow, chaptersOrig) {
   }
 }
 
+// versões oficiais que o ScummVM reconhece pelo par chapters.ini + x.xarc (md5 dos arquivos inteiros,
+// todos com menos de 5000 bytes). Com uma delas, o ScummVM sabe o idioma e usa a página de código certa
+// (ex.: cp1250 no polonês). A pasta-sombra só é necessária se o executável da Steam contém
+// um bitmap de diálogo inválido que essa identificação deixa de ignorar.
+const XARC_4CD = 'a0559457126caadab0cadac02d35f26f';   // GOG e versões em 4 CDs
+const XARC_DVD = 'de8327850d7bba90b690b141eaa23f61';   // Steam e DVD
+const SCUMMVM_KNOWN = new Map([
+  ['5b5a1f1dd2297d9ce0d3d12216d5d2c5', [XARC_4CD, XARC_DVD]],   // inglês
+  ['6abc5c38e6e31face4b675355b117620', [XARC_4CD]],             // polonês
+  ['e4611d143a87b263d8d7a54edc7e7cd7', [XARC_4CD, XARC_DVD]],   // alemão
+  ['e54f6370dca06496069790840409cf95', [XARC_4CD, XARC_DVD]],   // francês
+  ['9a81ea4e6f5b84511dd4e56d04a64e2e', [XARC_4CD, XARC_DVD]],   // italiano
+  ['3640df6d536b186bff228337284d9631', [XARC_4CD]],             // espanhol
+  ['c8dadd9a3b41640734d6213e89cd5635', [XARC_4CD]],             // holandês
+  ['f6a2007300209492b7b90b4c0467832d', [XARC_4CD, XARC_DVD]],   // sueco
+  ['f358f604abd1aa1476ed05d6d271ac70', [XARC_4CD, XARC_DVD]],   // norueguês
+  ['547f0b9c04c00d330b60eed6e8d24732', [XARC_4CD]],             // tcheco
+  ['740b97b94e97ed11f064f5fa125ebee1', [XARC_DVD]],             // russo
+  ['790b51a88b5493bff5168a77738e0e84', [XARC_4CD, XARC_DVD]],   // húngaro
+  ['53c9b6087044be0ba05f8d7b39c8ae48', [XARC_4CD]],             // hebraico
+]);
+const ENGLISH_CHAPTERS = '5b5a1f1dd2297d9ce0d3d12216d5d2c5';
+const md5Hex = (b) => crypto.createHash('md5').update(b).digest('hex');
+
+/** O ScummVM lê o bitmap 147 de .rsrc com offset = RVA + rawOffset - virtualAddress.
+ *  O executável Steam contém esse recurso fora do arquivo e só a detecção Steam o ignora.
+ *  Inspeciona apenas esse bitmap, sem executar ou alterar o PE. */
+function invalidDialogBitmap(buf) {
+  if (!Buffer.isBuffer(buf) || buf.length < 64 || buf.readUInt16LE(0) !== 0x5A4D) return false;
+  const pe = buf.readUInt32LE(60);
+  const fits = (off, size) => off >= 0 && size >= 0 && off <= buf.length && size <= buf.length - off;
+  if (!fits(pe, 24) || buf.readUInt32LE(pe) !== 0x00004550) return false;
+  const count = buf.readUInt16LE(pe + 6);
+  const table = pe + 24 + buf.readUInt16LE(pe + 20);
+  if (!fits(table, count * 40)) return false;
+  let section;
+  for (let i = 0; i < count; i++) {
+    const off = table + i * 40;
+    const name = buf.subarray(off, off + 8).toString('ascii').replace(/\0.*$/, '');
+    if (name === '.rsrc') {
+      section = { virtualAddress: buf.readUInt32LE(off + 12), size: buf.readUInt32LE(off + 16),
+                  offset: buf.readUInt32LE(off + 20) };
+      break;
+    }
+  }
+  if (!section) return false;
+  const resourceFits = (rel, size) => rel >= 0 && rel <= section.size && size <= section.size - rel
+    && fits(section.offset + rel, size);
+  const directory = (rel) => {
+    if (!resourceFits(rel, 16)) return null;
+    const off = section.offset + rel;
+    const entries = buf.readUInt16LE(off + 12) + buf.readUInt16LE(off + 14);
+    if (!resourceFits(rel + 16, entries * 8)) return null;
+    const result = [];
+    for (let i = 0; i < entries; i++) {
+      const pos = off + 16 + i * 8;
+      result.push({ id: buf.readUInt32LE(pos), next: buf.readUInt32LE(pos + 4) });
+    }
+    return result;
+  };
+  const root = directory(0);
+  const bitmapType = root && root.find(e => e.id === 2);
+  if (!bitmapType || !(bitmapType.next & 0x80000000)) return false;
+  const bitmaps = directory(bitmapType.next & 0x7FFFFFFF);
+  const bitmap = bitmaps && bitmaps.find(e => e.id === 147);
+  if (!bitmap) return false;
+  if (!(bitmap.next & 0x80000000)) return true;
+  const languages = directory(bitmap.next & 0x7FFFFFFF);
+  if (!languages) return true;
+  return languages.some(e => {
+    if ((e.next & 0x80000000) || !resourceFits(e.next, 16)) return true;
+    const off = section.offset + e.next;
+    const resourceOffset = buf.readUInt32LE(off) + section.offset - section.virtualAddress;
+    const resourceSize = buf.readUInt32LE(off + 4);
+    return resourceSize === 0 || !fits(resourceOffset, resourceSize);
+  });
+}
+
+/** o chapters.ini e o x.xarc que estão na pasta do jogo formam uma versão que o ScummVM conhece?
+ *  devolve o md5 do chapters.ini (ou null) */
+async function scummvmKnownVersion(game) {
+  const cache = new Map();
+  const ch = await readIfExists((await resolveCi(game, 'chapters.ini', cache)).abs);
+  const xa = await readIfExists((await resolveCi(game, 'x.xarc', cache)).abs);
+  if (ch === null || xa === null) return null;
+  const key = md5Hex(ch);
+  const xarcs = SCUMMVM_KNOWN.get(key);
+  return xarcs && xarcs.includes(md5Hex(xa)) ? key : null;
+}
+
 /** pasta que o ScummVM deve usar: a do jogo, ou a pasta-sombra se o chapters.ini foi trocado */
 async function scummvmGamePath(game) {
-  const ch = await resolveCi(game, 'chapters.ini', new Map());
+  const cache = new Map();
+  const ch = await resolveCi(game, 'chapters.ini', cache);
+  const known = await scummvmKnownVersion(game);
+  if (known) {
+    if (known !== ENGLISH_CHAPTERS) {
+      const exe = await readIfExists((await resolveCi(game, 'game.exe', cache)).abs);
+      if (invalidDialogBitmap(exe)) {
+        // Mantém a detecção e o idioma oficiais, mas usa o fundo de diálogo padrão do ScummVM.
+        const shadow = path.join(dataDir(), SHADOW_DIR);
+        await syncShadow(game, shadow, await fsp.readFile(ch.abs), true);
+        return shadow;
+      }
+    }
+    return game;
+  }
   const original = await readIfExists(ch.abs + BACKUP_TAG);
   if (original === null) return game;
   const shadow = path.join(dataDir(), SHADOW_DIR);
@@ -1103,10 +1243,21 @@ async function ensureScummVMTarget(cfgFile, scvPath, game) {
   const ours = ini.sections.find(s => s.keys.gameid && s.keys.gameid.value === 'tlj' && s.keys.path
     && [scvPath, game, shadow].some(p => samePath(s.keys.path.value, p)));
   if (ours) {
+    let changed = false;
     if (!samePath(ours.keys.path.value, scvPath)) {
       ini.lines[ours.keys.path.line] = `path=${scvPath}`;
-      await fsp.writeFile(cfgFile, ini.lines.join(eol));
+      changed = true;
     }
+    // jogo com idioma fixo (o ScummVM grava "language=en" ao adicionar): com o chapters.ini de outra versão
+    // oficial (ex.: o polonês) ele não acharia o jogo; sem a chave, o ScummVM detecta o idioma sozinho
+    if (ours.keys.language) {
+      const known = await scummvmKnownVersion(scvPath);
+      if (known && known !== ENGLISH_CHAPTERS) {
+        ini.lines.splice(ours.keys.language.line, 1);
+        changed = true;
+      }
+    }
+    if (changed) await fsp.writeFile(cfgFile, ini.lines.join(eol));
     return ours.name;
   }
   const names = new Set(ini.sections.map(s => s.name.toLowerCase()));
@@ -1911,9 +2062,9 @@ module.exports = {
   default: main,
   // exportado só para testes automatizados
   _internals: { readPatch, applyEntry, applyXarc, crc32, rootIndex, resolveCi, modsIndex, assetLevelIndex, modNameFrom,
-                GAME_ID, SCUMMVM_RELEASE, dataDir, findScummVM, unzipFile, downloadTo, syncShadow, scummvmGamePath,
+                GAME_ID, SCUMMVM_RELEASE, dataDir, findScummVM, unzipFile, downloadTo, syncShadow, scummvmGamePath, invalidDialogBitmap,
                 ensureScummVMTarget, isTljLaunch, makeStartHook, loadPrefs, savePrefs, parseIni,
-                downloadScummVM, configureEngine, refreshShadow, SHADOW_DIR, decideEngine, enabledModsByEngine,
+                downloadScummVM, configureEngine, refreshShadow, SHADOW_DIR, scummvmKnownVersion, decideEngine, enabledModsByEngine,
                 scanEngine, engineOfFiles, findOtherCopies, checkOtherCopies, removeCopies, versionCmp, cleanLegacyPrefs,
                 pickLanguage, systemLocale, tr, ownScummVM, defaultSavesDir, scummvmSavesDir, openFolder,
                 removeShadowDir, removeOwnTargets, removeDownloadedScummVM, obtainScummVM, OWN_DIR, OWN_DESCRIPTION,

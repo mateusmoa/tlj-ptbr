@@ -11,6 +11,7 @@
   "structureUnexpected": "struttura inattesa ({{count}} nodi, previsti {{expected}})",
   "nodeMissing": "nodo mancante",
   "nodeType": "tipo di nodo inatteso",
+  "memberMismatch": "un file dentro il .xarc è diverso da quello atteso dalla patch",
   "speechInvalid": "battuta di dialogo non valida",
   "speechData": "dati della battuta di dialogo inattesi",
   "imageTextInvalid": "testo dell'immagine non valido",

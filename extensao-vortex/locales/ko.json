@@ -11,6 +11,7 @@
   "structureUnexpected": "예상과 다른 구조(노드 {{count}}개, 예상 {{expected}}개)",
   "nodeMissing": "노드가 없음",
   "nodeType": "예상과 다른 노드 유형",
+  "memberMismatch": ".xarc 안의 파일이 패치가 예상한 것과 다릅니다",
   "speechInvalid": "잘못된 대사",
   "speechData": "대사 데이터가 예상과 다름",
   "imageTextInvalid": "잘못된 이미지 텍스트",

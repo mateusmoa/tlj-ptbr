@@ -11,6 +11,7 @@
   "structureUnexpected": "nieoczekiwana struktura (liczba węzłów: {{count}}, oczekiwano: {{expected}})",
   "nodeMissing": "brak węzła",
   "nodeType": "nieoczekiwany typ węzła",
+  "memberMismatch": "plik wewnątrz .xarc jest inny niż oczekuje łatka",
   "speechInvalid": "nieprawidłowa kwestia dialogowa",
   "speechData": "nieoczekiwane dane kwestii dialogowej",
   "imageTextInvalid": "nieprawidłowy tekst obrazu",

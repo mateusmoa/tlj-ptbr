@@ -1,4 +1,4 @@
-# The Longest Journey — Vortex extension 0.3.0
+# The Longest Journey — Vortex extension 0.3.3
 
 ## Português
 
@@ -22,6 +22,19 @@ pacote de saves do jogo original. As cópias vão para a pasta de saves do Scumm
 um save do próprio jogador no ScummVM nunca é sobrescrito, e converter de novo só regrava as cópias cujo original
 mudou. Para converter, a extensão lê a estrutura de cada fase nos arquivos do próprio jogo (`saveconv.js`).
 Quem preferir continuar no jogo original escolhe "Sempre abrir no jogo original (game.exe)".
+
+Outras versões oficiais (ex.: o pacote polonês gerado da cópia polonesa do próprio jogador): quando um mod
+troca o `chapters.ini` pelo de uma versão que o ScummVM conhece (o par `chapters.ini` + `x.xarc`), a extensão
+abre o jogo direto da pasta dele, sem a pasta auxiliar, e tira o idioma fixo (`language=`) do jogo no
+`scummvm.ini`: assim o ScummVM detecta o idioma sozinho e usa a página de código certa (cp1250 no polonês, para
+ł ą ś ż). Desde a 0.3.2 o `.tljpatch` também troca, pelo nome, arquivos de dentro do `.xarc` (operação 6, usada
+pelas falas curtas `.isn` embutidas), e os acrescenta quando a versão do jogo não os tem (a Steam usa `.ovs` soltos
+no lugar). Uma dublagem em `.iss` instalada numa versão que usa `.ovs` (Steam/DVD) fica marcada como só do ScummVM,
+que procura o `.iss` antes do `.ovs`; o game.exe dessas versões toca os `.ovs`.
+Na Steam, com o pacote polonês o ScummVM reconhece "Polish 4CD" e tentaria ler do game.exe dela o fundo das
+caixas de diálogo (bitmap 147), que não existe de verdade nesse executável (só a entrada "English Steam" do ScummVM
+pula essa leitura). Desde a 0.3.3 a extensão detecta esse caso e abre o jogo por uma pasta auxiliar sem o
+`game.exe`/`game.dll`: o ScummVM usa o fundo padrão e o executável instalado não muda.
 
 Pacotes de saves baixados: o Vortex não instala saves na pasta do jogo (lá eles não servem). Ele explica onde
 cada tipo vai: saves do ScummVM (`tlj-win-001.tlj`...) na pasta de saves do ScummVM; saves do jogo original
@@ -62,6 +75,19 @@ ScummVM save, with the same names as in the original game. The originals are not
 overwritten, and converting again only rewrites the copies whose original changed. To convert, the extension
 reads the structure of each location from the game's own files (`saveconv.js`). To keep playing the originals
 in the original game instead, choose "Always start the original game (game.exe)".
+
+Other official language versions (e.g. the Polish pack built from the player's own Polish copy): when a mod
+replaces `chapters.ini` with one from a version ScummVM recognizes (the `chapters.ini` + `x.xarc` pair), the
+extension starts the game straight from its folder, without the helper folder, and removes a fixed language
+(`language=`) from the game entry in `scummvm.ini`, so ScummVM detects the language itself and uses the right
+code page (cp1250 for Polish: ł ą ś ż). Since 0.3.2 a `.tljpatch` can also replace files inside a `.xarc` by name
+(operation 6, used for the short `.isn` voice lines stored inside them) and adds them when the game version lacks
+them (Steam uses loose `.ovs` files instead). A `.iss` dubbing installed on a version that uses `.ovs` (Steam/DVD) is
+marked ScummVM-only: ScummVM looks for the `.iss` before the `.ovs`, while that version's game.exe plays the `.ovs`.
+On Steam, with the Polish pack ScummVM identifies "Polish 4CD" and would read the dialog background (bitmap 147)
+from Steam's game.exe, which doesn't really contain it (only ScummVM's "English Steam" entry skips that read).
+Since 0.3.3 the extension detects this and starts the game from a helper folder without `game.exe`/`game.dll`:
+ScummVM uses its plain background and the installed executable is untouched.
 
 Downloaded savegame packs: Vortex does not install saved games into the game folder, where they do not work.
 It explains where each kind goes: ScummVM saves (`tlj-win-001.tlj`...) into the ScummVM saved games folder;

@@ -11,6 +11,7 @@
   "structureUnexpected": "structure inattendue ({{count}} nœuds, {{expected}} attendus)",
   "nodeMissing": "nœud manquant",
   "nodeType": "type de nœud inattendu",
+  "memberMismatch": "un fichier à l'intérieur du .xarc ne correspond pas à ce qu'attend le patch",
   "speechInvalid": "réplique de dialogue invalide",
   "speechData": "données de la réplique de dialogue inattendues",
   "imageTextInvalid": "texte d'image invalide",

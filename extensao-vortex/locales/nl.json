@@ -11,6 +11,7 @@
   "structureUnexpected": "onverwachte structuur ({{count}} knooppunten, verwacht: {{expected}})",
   "nodeMissing": "ontbrekend knooppunt",
   "nodeType": "onverwacht type knooppunt",
+  "memberMismatch": "een bestand in de .xarc wijkt af van wat de patch verwacht",
   "speechInvalid": "ongeldige dialoogregel",
   "speechData": "onverwachte gegevens in dialoogregel",
   "imageTextInvalid": "ongeldige afbeeldingstekst",

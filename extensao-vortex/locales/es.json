@@ -11,6 +11,7 @@
   "structureUnexpected": "estructura inesperada ({{count}} nodos, se esperaban {{expected}})",
   "nodeMissing": "nodo inexistente",
   "nodeType": "tipo de nodo inesperado",
+  "memberMismatch": "un archivo dentro del .xarc es distinto del esperado",
   "speechInvalid": "línea de diálogo no válida",
   "speechData": "datos de la línea de diálogo inesperados",
   "imageTextInvalid": "texto de imagen no válido",

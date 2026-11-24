@@ -40,7 +40,7 @@ test('language priority, regional codes, system fallback and unsupported languag
 test('all user-facing keys and parameters are present in all catalogs', () => {
   const used = [...new Set([...source.matchAll(/\btr\('([^']+)'/g)].map(m => m[1]))].sort();
   assert.deepEqual(used, Object.keys(en).sort());
-  assert.equal(used.length, 99);
+  assert.equal(used.length, 105);
   for (const lang of languages) {
     const catalog = require(`../locales/${lang}.json`);
     assert.deepEqual(Object.keys(catalog).sort(), used, lang);

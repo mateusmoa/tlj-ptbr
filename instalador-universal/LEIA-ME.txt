@@ -1,0 +1,107 @@
+THE LONGEST JOURNEY — INSTALADOR UNIVERSAL 2.0.0
+Para as versões em inglês da Steam e da GOG, sem o Vortex.
+(English: see README.txt)
+
+O QUE ELE INSTALA
+- Texto: pacotes com .tljpatch de qualquer idioma das builds (PT-BR, DE, ES, FR,
+  NL, IT, NO, SV, PL, RU, CS, ZH, KO, HU, JA).
+- Vídeos (FMV): pacotes com arquivos .bbb.
+- Áudio da Steam (falas .ovs) ou da GOG (falas .iss). O instalador vê qual é o
+  formato das falas do seu jogo e recusa o pacote de áudio que não serve.
+- Arquivos prontos (ex.: TLJ_PL_Tekst_Steam_Gotowe_Pliki.zip): .xarc, .ini e
+  fontes já prontos.
+Os ZIPs são lidos direto: não precisa extrair nada. Pastas já extraídas também
+funcionam. Este ZIP não traz nenhuma tradução: baixe os pacotes à parte.
+
+COMO USAR
+1. Extraia este ZIP numa pasta sua (não precisa ser a pasta do jogo).
+2. Coloque na pasta "dados" os ZIPs dos pacotes que você quer. Pode juntar
+   texto, vídeos e áudio, mas só um pacote de cada tipo.
+3. Feche o jogo e abra Instalador_TLJ.exe.
+4. Confira a pasta do jogo mostrada e escolha 1 (instalar todos os pacotes
+   compatíveis) ou 2 (escolher quais).
+
+Exemplo:
+  Instalador_TLJ.exe
+  dados\
+    TLJ_DE_Texte_Steam_GOG.zip
+    TLJ_DE_Videos_Steam_GOG.zip
+    TLJ_DE_Sprachausgabe_Steam.zip
+
+O instalador procura o jogo na Steam, na GOG e na pasta onde ele está. Se
+houver mais de uma instalação, ele pergunta qual usar. Se não achar nenhuma,
+pede para você colar o caminho da pasta onde fica o game.exe.
+Se a pasta "dados" estiver vazia, coloque os ZIPs e aperte Enter para procurar
+de novo, ou cole o caminho de um ZIP, .tljpatch ou pasta.
+
+TROCAR DE IDIOMA OU ATUALIZAR
+Ponha o pacote novo em "dados" (tire o antigo do mesmo tipo) e instale de novo.
+- O texto é sempre aplicado sobre os arquivos originais em inglês, guardados no
+  backup. O que só o pacote anterior alterava volta ao original.
+- Vídeos e áudio: arquivos do pacote anterior do mesmo tipo que não existem no
+  novo voltam ao original (ou são apagados, se o jogo não os tinha).
+- Áudio da Steam e da GOG não se misturam: instalar um remove o outro.
+- Texto (.tljpatch) e "arquivos prontos" que mexem nos mesmos arquivos são
+  alternativas: instalar um remove o outro.
+
+DESINSTALAR
+Abra o instalador e escolha Desinstalar: tudo ou só um tipo (texto, vídeos,
+áudio, arquivos prontos). Os pacotes não precisam estar em "dados" para isso.
+Os originais ficam em _backup_traducao_tlj, dentro da pasta do jogo. Não apague
+essa pasta enquanto houver algo instalado.
+Se o backup se perder: Steam > Propriedades > Arquivos instalados > Verificar
+integridade (GOG Galaxy: Gerenciar instalação > Verificar/Reparar).
+
+QUEM JÁ USOU UM INSTALADOR PT-BR
+O backup _backup_traducao_ptbr (do instalador universal 1.x, do instalador que
+vem no pacote PT-BR e do script Python para Linux/Steam Deck/Mac, inclusive o
+modo --scummvm) é reaproveitado: o 2.0 reconhece a tradução instalada, troca de
+idioma e desinstala normalmente.
+
+SCUMMVM
+Os textos em russo, tcheco, chinês, coreano e japonês aparecem certos no jogo
+original (game.exe), mas ficam ilegíveis no ScummVM 2026.4, que ainda não lê
+esses conjuntos de caracteres nesta versão do jogo. O instalador avisa quando
+isso acontece. Os demais idiomas funcionam nos dois.
+
+VORTEX
+Não misture com o Vortex. Se ele gerencia mods deste jogo (há arquivos
+.vortex_backup na pasta), o instalador para. Desative os mods e faça Purge Mods
+no Vortex antes, ou instale tudo pelo Vortex.
+
+PERMISSÃO
+Se o jogo estiver em "Arquivos de Programas", o Windows pode exigir
+administrador; o instalador oferece reabrir com essa permissão.
+Requisitos: Windows com .NET Framework 4.5 ou mais novo (já vem no Windows 10
+e 11). O programa não acessa a internet.
+
+LINHA DE COMANDO (OPCIONAL)
+  Instalador_TLJ.exe --ajuda
+  Instalador_TLJ.exe --jogo "PASTA DO JOGO" --verificar
+  Instalador_TLJ.exe --jogo "PASTA DO JOGO" --pacote "TLJ_DE_Texte_Steam_GOG.zip" --instalar --sim
+  Instalador_TLJ.exe --jogo "PASTA DO JOGO" --desinstalar audio --sim
+Opções:
+  --dados PASTA          pasta dos pacotes (padrão: "dados" ao lado do EXE)
+  --pacote CAMINHO       ZIP, .tljpatch ou pasta; pode repetir
+  --instalar             instala sem mostrar o menu
+  --verificar            só confere, sem alterar nada
+  --desinstalar [tudo|texto|video|audio|arquivos]
+  --sim                  sem perguntas
+  --idioma pt|en         idioma das mensagens (o padrão segue o Windows)
+Também dá para arrastar um ZIP ou a pasta do jogo para cima do EXE.
+
+VERIFICAÇÃO DESTA VERSÃO
+- Os 15 textos das builds (PT-BR, DE, ES, FR, NL, IT, NO, SV, PL, RU, CS, ZH,
+  KO, HU, JA) instalados em sequência sobre uma cópia dos arquivos originais da
+  Steam, trocando de idioma a cada passo. Cada arquivo foi conferido contra o
+  aplicador da extensão do Vortex 0.3.4: tudo idêntico. A desinstalação
+  completa devolveu os originais byte a byte.
+- Migração a partir do instalador 1.1.0, do instalador do pacote PT-BR 0.1.7 e
+  do script Python (inclusive --scummvm), com troca para outro idioma e
+  desinstalação.
+- Classificação de todos os ZIPs das builds (texto, vídeos, áudio Steam/GOG e
+  arquivos prontos com fontes).
+- Troca de vídeos e de áudio, desinstalação parcial, menus e aviso do ScummVM.
+- Os testes não mexeram em nenhuma instalação real do jogo.
+
+O código-fonte e o Compilar.bat estão em codigo-fonte.

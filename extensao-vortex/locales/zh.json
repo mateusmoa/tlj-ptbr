@@ -97,5 +97,11 @@
   "convertSavesUnchanged": "之前已转换且此后没有变化：{{count}} 个。",
   "convertSavesFailed": "无法转换：\n{{list}}",
   "convertSavesNone": "在以下位置没有找到原版游戏的存档（SaveNN.tlj）：\n{{dir}}",
-  "openOriginalSavesFolder": "打开原版游戏存档文件夹"
+  "openOriginalSavesFolder": "打开原版游戏存档文件夹",
+  "textScummvmTitle": "此翻译在 ScummVM 中无法正常显示",
+  "textScummvmBody": "当前启用的翻译使用的文本编码（{{encoding}}）ScummVM 无法在《The Longest Journey》中显示。字幕、菜单和对话记录都会变成乱码。\n\n改为运行原版游戏（game.exe）吗？ScummVM 模组仍保持安装，只是在原版游戏中不起作用：\n{{mods}}",
+  "playOriginal": "运行原版游戏",
+  "playScummvmAnyway": "仍然使用 ScummVM",
+  "rememberChoice": "此翻译不再询问",
+  "translationOriginalOnly": "{{name}} 只能在原版游戏（game.exe）中正确显示。启用期间，Vortex 会在启动 ScummVM 前先询问。"
 }

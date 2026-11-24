@@ -1,4 +1,4 @@
-# The Longest Journey — Vortex extension 0.3.3
+# The Longest Journey — Vortex extension 0.3.6
 
 ## Português
 
@@ -35,6 +35,23 @@ Na Steam, com o pacote polonês o ScummVM reconhece "Polish 4CD" e tentaria ler 
 caixas de diálogo (bitmap 147), que não existe de verdade nesse executável (só a entrada "English Steam" do ScummVM
 pula essa leitura). Desde a 0.3.3 a extensão detecta esse caso e abre o jogo por uma pasta auxiliar sem o
 `game.exe`/`game.dll`: o ScummVM usa o fundo padrão e o executável instalado não muda.
+
+Textos que o ScummVM não consegue mostrar (0.3.4): o ScummVM 2026.4 usa a página de código da versão que
+reconhece (cp1250 só no polonês, cp1251 só nas versões russas reconhecidas) e não tem suporte a tcheco, chinês,
+japonês e coreano neste jogo. Antes de abrir o ScummVM, a extensão confere os textos instalados
+(`global/Global.xarc`) e, se ele não conseguir mostrá-los, oferece abrir o game.exe original (a escolha pode ser
+lembrada por tradução).
+
+Steam no Vortex 2.11 (0.3.5): a partir do Vortex 2.11, o Jogar entrega os jogos da Steam direto para a Steam,
+sem chamar o `steam.exe -applaunch` que a extensão usava para trocar a abertura pelo ScummVM; com mods do
+ScummVM ativos, abria o game.exe original. Agora, quando os mods ativos precisam do ScummVM, a versão Steam não
+passa pela Steam: o Vortex chama o `game.exe` e a extensão troca pelo ScummVM. Se a escolha for o jogo original,
+ele abre pela Steam (`steam://rungameid/6310`).
+
+Tradução instalada fora do Vortex (0.3.6): se a tradução foi instalada pelo Instalador Universal ou pelo script,
+o `chapters.ini` da pasta do jogo é o traduzido e não existe `chapters.ini.vortex_backup`. A extensão agora pega o
+original do backup desses instaladores (`_backup_traducao_tlj`, ou `_backup_traducao_ptbr` do instalador antigo)
+e abre o ScummVM pela pasta auxiliar.
 
 Pacotes de saves baixados: o Vortex não instala saves na pasta do jogo (lá eles não servem). Ele explica onde
 cada tipo vai: saves do ScummVM (`tlj-win-001.tlj`...) na pasta de saves do ScummVM; saves do jogo original
@@ -89,6 +106,23 @@ from Steam's game.exe, which doesn't really contain it (only ScummVM's "English 
 Since 0.3.3 the extension detects this and starts the game from a helper folder without `game.exe`/`game.dll`:
 ScummVM uses its plain background and the installed executable is untouched.
 
+Texts ScummVM cannot display (0.3.4): ScummVM 2026.4 uses the code page of the version it recognizes (cp1250 only
+for Polish, cp1251 only for recognized Russian versions) and has no Czech, Chinese, Japanese or Korean support for
+this game. Before starting ScummVM, the extension samples the installed texts (`global/Global.xarc`) and, if
+ScummVM cannot display them, offers to start the original game.exe instead (the choice can be remembered per
+translation).
+
+Steam on Vortex 2.11 (0.3.5): since Vortex 2.11, Play hands Steam games straight to Steam instead of calling
+`steam.exe -applaunch`, which the extension used to switch the launch to ScummVM; with ScummVM mods enabled the
+original game.exe opened. Now, when the enabled mods need ScummVM, the Steam edition is not started through Steam:
+Vortex calls `game.exe` and the extension swaps it for ScummVM. When the original game is chosen, it is opened
+through Steam (`steam://rungameid/6310`).
+
+Translation installed outside Vortex (0.3.6): when the translation was installed with the Universal Installer or
+the script, the game folder has the translated `chapters.ini` and there is no `chapters.ini.vortex_backup`. The
+extension now takes the original from those installers' backup (`_backup_traducao_tlj`, or `_backup_traducao_ptbr`
+from the old installer) and starts ScummVM through the helper folder.
+
 Downloaded savegame packs: Vortex does not install saved games into the game folder, where they do not work.
 It explains where each kind goes: ScummVM saves (`tlj-win-001.tlj`...) into the ScummVM saved games folder;
 saves from the original game (`Save01.tlj` + `Save01.tga` + `Index.dat`) into the original game's saves
@@ -101,7 +135,7 @@ supported, otherwise English. Corrections to the translations are welcome.
 
 ## Development
 
-`locales/` holds one JSON catalog per language (98 messages each, `{{name}}` placeholders) and `i18n.js`
+`locales/` holds one JSON catalog per language (105 messages each, `{{name}}` placeholders) and `i18n.js`
 picks the language and fills the placeholders. `saveconv.js` converts saves from the original game to the
 ScummVM format (version 12, read by ScummVM 2.x); it was validated against ScummVM saves made at the same
 points of the game and by loading the converted saves in ScummVM. No runtime dependencies or network services.

@@ -97,5 +97,11 @@
   "convertSavesUnchanged": "Korábban már átalakítva, azóta változatlan: {{count}}.",
   "convertSavesFailed": "Nem sikerült átalakítani:\n{{list}}",
   "convertSavesNone": "Nem található az eredeti játékból származó mentés (SaveNN.tlj) itt:\n{{dir}}",
-  "openOriginalSavesFolder": "Az eredeti játék mentési mappájának megnyitása"
+  "openOriginalSavesFolder": "Az eredeti játék mentési mappájának megnyitása",
+  "textScummvmTitle": "Ez a fordítás olvashatatlan a ScummVM-ben",
+  "textScummvmBody": "Az aktív fordítás olyan szövegkódolást ({{encoding}}) használ, amelyet a ScummVM nem jelenít meg a The Longest Journey esetében. A feliratok, a menük és a beszélgetésnapló olvashatatlan lenne.\n\nInkább az eredeti játékot (game.exe) indítja? A ScummVM-modok telepítve maradnak, de ott nincs hatásuk:\n{{mods}}",
+  "playOriginal": "Az eredeti játék indítása",
+  "playScummvmAnyway": "ScummVM használata mégis",
+  "rememberChoice": "Ennél a fordításnál ne kérdezzen többet",
+  "translationOriginalOnly": "A(z) {{name}} csak az eredeti játékban (game.exe) jelenik meg helyesen. Amíg aktív, a Vortex rákérdez, mielőtt elindítaná a ScummVM-et."
 }

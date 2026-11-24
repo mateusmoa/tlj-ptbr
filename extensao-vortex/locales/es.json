@@ -97,5 +97,11 @@
   "convertSavesUnchanged": "Ya convertidas antes y sin cambios desde entonces: {{count}}.",
   "convertSavesFailed": "No se han podido convertir:\n{{list}}",
   "convertSavesNone": "No se ha encontrado ninguna partida guardada del juego original (SaveNN.tlj) en:\n{{dir}}",
-  "openOriginalSavesFolder": "Abrir la carpeta de partidas guardadas del juego original"
+  "openOriginalSavesFolder": "Abrir la carpeta de partidas guardadas del juego original",
+  "textScummvmTitle": "Esta traducción no se puede leer en ScummVM",
+  "textScummvmBody": "La traducción activa usa una codificación de texto ({{encoding}}) que ScummVM no muestra en The Longest Journey. Los subtítulos, los menús y el registro de conversaciones serían ilegibles.\n\n¿Abrir el juego original (game.exe) en su lugar? Los mods de ScummVM siguen instalados, pero ahí no tienen efecto:\n{{mods}}",
+  "playOriginal": "Jugar al juego original",
+  "playScummvmAnyway": "Usar ScummVM de todos modos",
+  "rememberChoice": "No volver a preguntar para esta traducción",
+  "translationOriginalOnly": "{{name}} solo se muestra correctamente en el juego original (game.exe). Mientras esté activa, Vortex preguntará antes de abrir ScummVM."
 }

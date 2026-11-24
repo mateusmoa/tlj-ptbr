@@ -97,5 +97,11 @@
   "convertSavesUnchanged": "이전에 이미 변환했고 그 뒤로 바뀌지 않은 파일: {{count}}개.",
   "convertSavesFailed": "변환하지 못했습니다:\n{{list}}",
   "convertSavesNone": "다음 위치에서 원본 게임의 저장 파일(SaveNN.tlj)을 찾지 못했습니다:\n{{dir}}",
-  "openOriginalSavesFolder": "원본 게임 저장 폴더 열기"
+  "openOriginalSavesFolder": "원본 게임 저장 폴더 열기",
+  "textScummvmTitle": "이 번역은 ScummVM에서 읽을 수 없습니다",
+  "textScummvmBody": "활성화된 번역은 ScummVM이 The Longest Journey에서 표시하지 못하는 텍스트 인코딩({{encoding}})을 사용합니다. 자막, 메뉴, 대화 기록이 깨져 보입니다.\n\n대신 원본 게임(game.exe)을 실행할까요? ScummVM 모드는 설치된 채로 남지만 원본 게임에서는 적용되지 않습니다:\n{{mods}}",
+  "playOriginal": "원본 게임 실행",
+  "playScummvmAnyway": "그래도 ScummVM 사용",
+  "rememberChoice": "이 번역에 대해 다시 묻지 않기",
+  "translationOriginalOnly": "{{name}}은(는) 원본 게임(game.exe)에서만 올바르게 표시됩니다. 활성화되어 있는 동안 Vortex는 ScummVM을 실행하기 전에 묻습니다."
 }

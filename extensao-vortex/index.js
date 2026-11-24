@@ -324,12 +324,28 @@ async function requiresLauncher(gamePath, store) {
   if (store !== 'steam' && !(store === undefined && inSteamLibrary)) {
     return undefined;
   }
+  // Com mods que precisam do ScummVM, não passa pela Steam: o Vortex chama o game.exe direto e o
+  // start hook troca pelo ScummVM. Pela Steam (steam://, sem steam.exe -applaunch) o hook nunca roda.
+  if (await wantsScummVM()) return undefined;
   try {
     await util.steam.findByAppId(STEAM_ID);
     return { launcher: 'steam' };   // Vortex usa details.steamAppId -> steam.exe -applaunch 6310
   } catch (err) {
     // a Steam do Vortex não listou o jogo: abre pelo protocolo steam://launch/6310
     return { launcher: 'steam', addInfo: { appId: STEAM_ID, parameters: [], launchType: 'gamestore' } };
+  }
+}
+
+/** antes de abrir: o jogo vai precisar do ScummVM? (sem perguntar nada; a escolha final é do start hook) */
+async function wantsScummVM() {
+  try {
+    if (!apiRef) return false;
+    const mode = (await loadPrefs()).mode || 'auto';
+    if (mode === ENGINE_GAME) return false;
+    if (mode === ENGINE_SCUMMVM) return true;
+    return (await enabledModsByEngine(apiRef)).scummvm.length > 0;
+  } catch (err) {
+    return false;
   }
 }
 
@@ -404,10 +420,37 @@ function makeInstallPatchMod(api) {
       throw new util.ProcessCanceled(tr('gameMismatch'));
     }
     log('info', 'tlj: patch aplicado', counts);
+    await notifyTextEngine(api, patch, game, cache, patchRel);
     if (progress) progress(100);
     instructions.push({ type: 'attribute', key: ENGINE_ATTR, value: 'both' });   // tradução: game.exe e ScummVM
     return { instructions };
   };
+}
+
+/** avisa na instalação quando a tradução só aparece legível no jogo original (a escolha é feita ao jogar) */
+async function notifyTextEngine(api, patch, game, cache, patchRel) {
+  try {
+    const texts = [];
+    for (const e of patch.entries) for (const ed of e.edits) if (ed.op === OP_SPEECH || ed.op === OP_IMGTEXT) texts.push(ed.payload);
+    const encoding = textEncodingOf(texts);
+    if (encoding === 'cp1252') return;
+    const fromPatch = (name) => { const e = patch.entries.find(x => x.kind === KIND_FILE && x.path.toLowerCase() === name); return e ? e.content : null; };
+    const fromGame = async (name) => {
+      const r = await resolveCi(game, name, cache);
+      const b = await readIfExists(r.abs + BACKUP_TAG);
+      return b !== null ? b : readIfExists(r.abs);
+    };
+    const chapters = fromPatch('chapters.ini') || await fromGame('chapters.ini');
+    const xarc = fromPatch('x.xarc') || await fromGame('x.xarc');
+    if (textReadable(encoding, codepageOf(chapters, xarc)) || typeof api.sendNotification !== 'function') return;
+    api.sendNotification({
+      id: 'tlj-texto-so-jogo-original',
+      type: 'info',
+      message: tr('translationOriginalOnly', { name: patch.title || path.basename(patchRel) }),
+    });
+  } catch (err) {
+    log('warn', 'tlj: verificar a codificação da tradução', err.message);
+  }
 }
 
 // ---------------------------------------------------------------- onde cada mod funciona
@@ -1105,6 +1148,8 @@ const SCUMMVM_KNOWN = new Map([
   ['f358f604abd1aa1476ed05d6d271ac70', [XARC_4CD, XARC_DVD]],   // norueguês
   ['547f0b9c04c00d330b60eed6e8d24732', [XARC_4CD]],             // tcheco
   ['740b97b94e97ed11f064f5fa125ebee1', [XARC_DVD]],             // russo
+  ['8e08025c89575d2573c2edf0daa1cb34', [XARC_4CD]],             // russo (4 CDs)
+  ['17510546145f6f574702094dca436a8d', [XARC_4CD]],             // russo (Triada)
   ['790b51a88b5493bff5168a77738e0e84', [XARC_4CD, XARC_DVD]],   // húngaro
   ['53c9b6087044be0ba05f8d7b39c8ae48', [XARC_4CD]],             // hebraico
 ]);
@@ -1194,11 +1239,143 @@ async function scummvmGamePath(game) {
     }
     return game;
   }
-  const original = await readIfExists(ch.abs + BACKUP_TAG);
+  let original = await readIfExists(ch.abs + BACKUP_TAG);
+  // tradução instalada fora do Vortex (Instalador Universal / script): o original fica no backup dele
+  for (const dir of ['_backup_traducao_tlj', '_backup_traducao_ptbr']) {
+    if (original !== null) break;
+    const b = await resolveCi(game, dir + '/chapters.ini', cache).catch(() => null);
+    if (b && b.abs) original = await readIfExists(b.abs);
+  }
   if (original === null) return game;
   const shadow = path.join(dataDir(), SHADOW_DIR);
   await syncShadow(game, shadow, original);
   return shadow;
+}
+
+// ---------------------------------------------------------------- texto da tradução x ScummVM
+// O ScummVM decodifica os textos do TLJ com a página de código do idioma da versão que ele reconhece:
+// polonês cp1250, russo cp1251, hebraico cp1255; qualquer outra (inclusive a pasta-sombra em inglês)
+// usa cp1252. Ele não tem página de código para o tcheco nem suporte a chinês, japonês ou coreano neste
+// jogo: uma tradução nessas codificações aparece ilegível nele (legendas, menus e registro de conversas).
+const SCUMMVM_CODEPAGE = new Map([
+  ['6abc5c38e6e31face4b675355b117620', 'cp1250'],   // polonês
+  ['740b97b94e97ed11f064f5fa125ebee1', 'cp1251'],   // russo (DVD)
+  ['8e08025c89575d2573c2edf0daa1cb34', 'cp1251'],   // russo (4 CDs)
+  ['17510546145f6f574702094dca436a8d', 'cp1251'],   // russo (Triada)
+  ['53c9b6087044be0ba05f8d7b39c8ae48', 'cp1255'],   // hebraico
+]);
+const ENCODING_LABEL = { cp1250: 'Windows-1250', cp1251: 'Windows-1251', cp1255: 'Windows-1255', cjk: 'CJK (GBK, Shift-JIS, UHC)' };
+
+/** codificação que os textos pedem, pela frequência dos bytes: 'cp1252' (Europa Ocidental),
+ *  'cp1250' (Europa Central), 'cp1251' (cirílico) ou 'cjk' (chinês, japonês, coreano) */
+function textEncodingOf(texts) {
+  const cnt = new Float64Array(256);
+  for (const t of texts) for (let i = 0; i < t.length; i++) cnt[t[i]]++;
+  let letters = 0, high = 0, upper = 0;
+  for (let b = 65; b <= 90; b++) letters += cnt[b] + cnt[b + 32];
+  for (let b = 128; b < 256; b++) high += cnt[b];
+  for (let b = 192; b < 256; b++) upper += cnt[b];
+  const total = letters + high;
+  if (total < 200) return 'cp1252';                                  // pouco texto para decidir
+  if (high / total > 0.5) return upper / high > 0.9 ? 'cp1251' : 'cjk';
+  const f = (b) => cnt[b] / total;
+  // ł/ą (polonês), ě e ř juntos (tcheco) ou bytes que não existem em cp1252 (ex.: ť)
+  const undef = cnt[0x81] + cnt[0x8D] + cnt[0x8F] + cnt[0x90] + cnt[0x9D];
+  if (f(0xB3) + f(0xB9) > 0.002 || (f(0xEC) > 0.002 && f(0xF8) > 0.002) || undef / total > 0.0005) return 'cp1250';
+  return 'cp1252';
+}
+
+/** o .xrc de dentro de um .xarc (ou null) */
+function xrcOfXarc(buf) {
+  if (!Buffer.isBuffer(buf) || buf.length < 12) return null;
+  const num = buf.readUInt32LE(4);
+  let o = 12, off = buf.readUInt32LE(8);
+  for (let i = 0; i < num; i++) {
+    const z = buf.indexOf(0, o);
+    if (z < 0 || z + 9 > buf.length) return null;
+    const name = buf.subarray(o, z).toString('latin1');
+    const len = buf.readUInt32LE(z + 1);
+    o = z + 9;
+    if (name.toLowerCase().endsWith('.xrc')) return off + len <= buf.length ? buf.subarray(off, off + len) : null;
+    off += len;
+  }
+  return null;
+}
+
+/** textos das falas e dos textos de imagem de um .xarc */
+function xarcTexts(buf) {
+  const xrc = xrcOfXarc(buf);
+  if (!xrc) return [];
+  let nodes;
+  try { nodes = parseNodes(xrc); } catch (err) { return []; }
+  const out = [];
+  for (const nd of nodes) {
+    const data = xrc.subarray(nd.dataOff + 4, nd.dataOff + 4 + nd.dataLen);
+    try {
+      if (nd.type === 29 && data.length >= 2) {
+        const tl = data.readUInt16LE(0);
+        if (2 + tl <= data.length) out.push(data.subarray(2, 2 + tl));
+      } else if (nd.type === 13 && nd.sub === 4) {
+        let o = 2 + data.readUInt16LE(0) + 16;
+        const pc = data.readUInt32LE(o);
+        o += 4;
+        for (let i = 0; i < pc; i++) o += 4 + data.readUInt32LE(o) * 8;
+        o += 8;
+        const tl = data.readUInt16LE(o);
+        if (o + 2 + tl <= data.length) out.push(data.subarray(o + 2, o + 2 + tl));
+      }
+    } catch (err) {
+      // nó com formato inesperado: fica de fora da amostra
+    }
+  }
+  return out;
+}
+
+/** codificação dos textos instalados na pasta do jogo (amostra: global/Global.xarc, que todas as traduções mudam) */
+async function deployedTextEncoding(game) {
+  const g = await resolveCi(game, 'global/Global.xarc', new Map());
+  const buf = await readIfExists(g.abs);
+  return { encoding: buf ? textEncodingOf(xarcTexts(buf)) : 'cp1252', signature: buf ? md5Hex(buf) : '' };
+}
+
+/** página de código que o ScummVM usará: a da versão que ele reconhece, ou cp1252 (pasta-sombra em inglês) */
+function codepageOf(chapters, xarc) {
+  if (!chapters || !xarc) return 'cp1252';
+  const key = md5Hex(chapters);
+  const xarcs = SCUMMVM_KNOWN.get(key);
+  return (xarcs && xarcs.includes(md5Hex(xarc)) && SCUMMVM_CODEPAGE.get(key)) || 'cp1252';
+}
+
+async function scummvmCodepage(game) {
+  const known = await scummvmKnownVersion(game);
+  return (known && SCUMMVM_CODEPAGE.get(known)) || 'cp1252';
+}
+
+const textReadable = (encoding, codepage) => encoding === 'cp1252' || encoding === codepage;
+
+/** antes de abrir no ScummVM: a tradução instalada fica legível nele? Se não, propõe o jogo original. */
+async function checkTextForScummVM(api, game, prefs, scummvmMods) {
+  const { encoding, signature } = await deployedTextEncoding(game);
+  const codepage = await scummvmCodepage(game);
+  if (textReadable(encoding, codepage)) return ENGINE_SCUMMVM;
+  log('info', 'tlj: tradução ilegível no ScummVM', { encoding, codepage });
+  const key = `${encoding}:${signature}`;
+  const saved = prefs.textEngine && prefs.textEngine[key];
+  if (saved === ENGINE_GAME || saved === ENGINE_SCUMMVM) return saved;
+  const ORIGINAL = tr('playOriginal');
+  const ANYWAY = tr('playScummvmAnyway');
+  const list = (scummvmMods || []).map(m => `- ${m.name}`).join('\n') || '-';
+  const res = await api.showDialog('question', tr('textScummvmTitle'), {
+    text: tr('textScummvmBody', { encoding: ENCODING_LABEL[encoding] || encoding, mods: list }),
+    checkboxes: [{ id: 'remember', text: tr('rememberChoice'), value: false }],
+  }, [{ label: tr('cancel') }, { label: ANYWAY }, { label: ORIGINAL, default: true }]);
+  if (!res || (res.action !== ORIGINAL && res.action !== ANYWAY)) throw new util.UserCanceled();
+  const engine = res.action === ANYWAY ? ENGINE_SCUMMVM : ENGINE_GAME;
+  if (res.input && res.input.remember) {
+    prefs.textEngine = { ...(prefs.textEngine || {}), [key]: engine };
+    await savePrefs(prefs).catch(err => log('warn', 'tlj: salvar a escolha do motor', err.message));
+  }
+  return engine;
 }
 
 // ---- scummvm.ini
@@ -1408,12 +1585,19 @@ function notifyAuto(api, mods) {
  *   - mods do ScummVM + mods que só funcionam no exe   -> pergunta qual combinação usar */
 async function decideEngine(api, game, prefs) {
   const mode = prefs.mode || 'auto';
-  if (mode === ENGINE_GAME || mode === ENGINE_SCUMMVM) return mode;
+  if (mode === ENGINE_GAME) return mode;
+  if (mode === ENGINE_SCUMMVM) {
+    let mods = [];
+    try { mods = (await enabledModsByEngine(api)).scummvm; } catch (err) { mods = []; }
+    return checkTextForScummVM(api, game, prefs, mods);
+  }
   const groups = await enabledModsByEngine(api);
   log('info', 'tlj: escolha do motor', {
     scummvm: groups.scummvm.map(m => m.name), exe: groups.exe.map(m => m.name), both: groups.both.map(m => m.name),
   });
   if (groups.scummvm.length === 0) return ENGINE_GAME;
+  // tradução que o ScummVM não consegue mostrar (tcheco, russo sem versão reconhecida, chinês, japonês, coreano)
+  if (await checkTextForScummVM(api, game, prefs, groups.scummvm) === ENGINE_GAME) return ENGINE_GAME;
   if (groups.exe.length === 0) {
     notifyAuto(api, groups.scummvm);
     return ENGINE_SCUMMVM;
@@ -1447,7 +1631,16 @@ function makeStartHook(api) {
     if (!game || !isTljLaunch(call, game)) return call;
     const prefs = await loadPrefs();
     const engine = await decideEngine(api, game, prefs);
-    if (engine !== ENGINE_SCUMMVM) return call;
+    if (engine !== ENGINE_SCUMMVM) {
+      // versão Steam aberta direto (porque havia mods do ScummVM) mas a escolha foi o jogo original:
+      // o game.exe da Steam só abre pela Steam
+      if (samePath(String(call.executable || ''), path.join(game, 'game.exe'))
+          && String(game).toLowerCase().split(/[\\/]/).includes('steamapps')) {
+        Promise.resolve(util.opn('steam://rungameid/' + STEAM_ID)).catch(() => null);
+        throw new util.UserCanceled();
+      }
+      return call;
+    }
     try {
       await warnOriginalSaves(api, prefs);
       const s = await prepareScummVM(api, game, prefs);
@@ -2070,5 +2263,7 @@ module.exports = {
                 removeShadowDir, removeOwnTargets, removeDownloadedScummVM, obtainScummVM, OWN_DIR, OWN_DESCRIPTION,
                 originalSavesDirs, warnOriginalSaves, originalSavesTarget, originalSaveFiles, convertSaves,
                 runConversion, scummvmTargetName, convertBaseSlot,
+                textEncodingOf, xarcTexts, deployedTextEncoding, codepageOf, scummvmCodepage, checkTextForScummVM, notifyTextEngine,
+                SCUMMVM_KNOWN, SCUMMVM_CODEPAGE,
                 setSaveConverter: impl => { saveconv = impl; } },
 };

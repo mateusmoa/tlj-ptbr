@@ -97,5 +97,11 @@
   "convertSavesUnchanged": "Již dříve převedené a od té doby beze změny: {{count}}.",
   "convertSavesFailed": "Nepodařilo se převést:\n{{list}}",
   "convertSavesNone": "Nebyly nalezeny žádné uložené hry z původní hry (SaveNN.tlj) v:\n{{dir}}",
-  "openOriginalSavesFolder": "Otevřít složku s uloženými hrami původní hry"
+  "openOriginalSavesFolder": "Otevřít složku s uloženými hrami původní hry",
+  "textScummvmTitle": "Tento překlad je ve ScummVM nečitelný",
+  "textScummvmBody": "Aktivní překlad používá kódování textu ({{encoding}}), které ScummVM u hry The Longest Journey nezobrazuje. Titulky, nabídky a záznam rozhovorů by byly nečitelné.\n\nSpustit místo toho původní hru (game.exe)? Módy pro ScummVM zůstanou nainstalované, ale v ní nemají žádný účinek:\n{{mods}}",
+  "playOriginal": "Hrát původní hru",
+  "playScummvmAnyway": "Přesto použít ScummVM",
+  "rememberChoice": "U tohoto překladu se už neptat",
+  "translationOriginalOnly": "{{name}} se správně zobrazuje jen v původní hře (game.exe). Dokud je aktivní, Vortex se před spuštěním ScummVM zeptá."
 }

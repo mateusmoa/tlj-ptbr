@@ -97,5 +97,11 @@
   "convertSavesUnchanged": "Bereits früher umgewandelt und seitdem unverändert: {{count}}.",
   "convertSavesFailed": "Konnten nicht umgewandelt werden:\n{{list}}",
   "convertSavesNone": "Keine Spielstände des Originalspiels (SaveNN.tlj) gefunden in:\n{{dir}}",
-  "openOriginalSavesFolder": "Spielstandordner des Originalspiels öffnen"
+  "openOriginalSavesFolder": "Spielstandordner des Originalspiels öffnen",
+  "textScummvmTitle": "Diese Übersetzung ist in ScummVM nicht lesbar",
+  "textScummvmBody": "Die aktive Übersetzung verwendet eine Textkodierung ({{encoding}}), die ScummVM bei The Longest Journey nicht darstellt. Untertitel, Menüs und das Gesprächsprotokoll wären unlesbar.\n\nStattdessen das Originalspiel (game.exe) starten? Die ScummVM-Mods bleiben installiert, wirken dort aber nicht:\n{{mods}}",
+  "playOriginal": "Originalspiel starten",
+  "playScummvmAnyway": "Trotzdem ScummVM verwenden",
+  "rememberChoice": "Für diese Übersetzung nicht mehr fragen",
+  "translationOriginalOnly": "{{name}} wird nur im Originalspiel (game.exe) korrekt angezeigt. Solange sie aktiv ist, fragt Vortex nach, bevor ScummVM gestartet wird."
 }

@@ -7,24 +7,32 @@ para português do Brasil. Página do mod: Nexus Mods (The Longest Journey).
 os textos traduzidos, ajustes de layout e hashes (SHA-1/CRC32) dos arquivos originais. O instalador
 aplica esse patch nos arquivos originais do próprio jogador.
 
+Versão atual da tradução: **0.1.8-beta**. Desde a 0.1.8, cada versão sai num arquivo só, sem `.exe`
+(`TLJ_PTBR_vX_vortex.zip`), que serve no Vortex, no Instalador Universal e no script do Linux/Steam Deck/Mac.
+
 ## Conteúdo
 
 | Pasta | O que é |
 |---|---|
-| `instalador-windows/` | `Instalador.cs`: código-fonte do `Instalar_Traducao_PTBR.exe` (console, .NET Framework 4). `compilar.bat` compila com o compilador que já vem no Windows. |
+| `instalador-universal/` | Código-fonte (C#) do **Instalador Universal 2.0.0** (`Instalador_TLJ.exe`, console, .NET Framework 4.5): instala, atualiza e desinstala pacotes de texto (`.tljpatch`, qualquer idioma), vídeos (`.bbb`) e áudio da Steam (`.ovs`) ou da GOG (`.iss`), sem o Vortex. Mensagens em português ou inglês. `Compilar.bat` compila com o compilador que já vem no Windows. |
+| `instalador-windows/` | Instalador antigo, só do PT-BR (`Instalar_Traducao_PTBR.exe`, até a 0.1.7). Substituído pelo Instalador Universal; o novo reaproveita o backup dele. |
 | `python/` | `tlj_ptbr_patcher.py`: o mesmo instalador em Python (Linux, Steam Deck, Mac), com a opção `--scummvm`. `gerar_patch.py`: gera o `.tljpatch` a partir de uma build traduzida completa. `gerar_build_copia_e_cola.py`: monta a build a partir da planilha. |
 | `extensao-vortex/` | Extensão do Vortex para o jogo (Steam 6310 / GOG 1207658794): instala mods na pasta do jogo, mods do ScummVM como o TLJ HD Mod e aplica `.tljpatch`. Desde a 0.3.0 converte os saves do jogo original para o ScummVM. |
 | `ferramentas-saves/` | Conversor de saves (jogo original ↔ ScummVM, com opções de slot) e editor de saves (inventário, variáveis da história, comparar). Python 3 + tkinter; veja o `LEIA-ME.txt`. |
 | `docs/` | Especificação do formato `.tljpatch`. |
 
-## O que o instalador faz
+## O que o Instalador Universal faz
+
+Os pacotes (ZIP, `.tljpatch` ou pasta) ficam na pasta `dados`, ao lado do `.exe`.
 
 1. Procura o jogo: na própria pasta, nas bibliotecas da Steam (`libraryfolders.vdf` / `appmanifest_6310.acf`)
    e no registro da GOG; se não achar, pede o caminho.
 2. Confere **todos** os arquivos antes de alterar qualquer um (hash do arquivo, estrutura da árvore .xrc e CRC
    das partes preservadas). Se algo não bater, não muda nada e orienta a verificar a integridade na Steam/GOG.
-3. Copia cada arquivo que vai alterar para `_backup_traducao_ptbr` dentro da pasta do jogo e grava os traduzidos.
-4. "Desinstalar" devolve os arquivos do backup.
+3. Copia cada arquivo que vai alterar para `_backup_traducao_tlj` dentro da pasta do jogo e grava os traduzidos.
+   Um backup do instalador antigo (`_backup_traducao_ptbr`) é aproveitado.
+4. "Desinstalar" devolve os arquivos do backup (tudo, ou só texto, vídeo, áudio ou arquivos prontos).
+5. Não mexe em jogo gerenciado pelo Vortex: se houver arquivos `.vortex_backup`, ele para e avisa.
 
 Não acessa a internet, não baixa nem executa nada. Só pede permissão de administrador (reabrindo a si mesmo,
 depois de perguntar) se não conseguir escrever na pasta do jogo.
@@ -70,8 +78,10 @@ e oferece removê-las (é preciso reiniciar o Vortex depois).
 Sem o Vortex:
 - Python: `python3 tlj_ptbr_patcher.py --scummvm` (`chapters.ini` original na pasta do jogo e o traduzido em
   `mods/TLJ_PTBR/`; `--desinstalar` também apaga essa pasta).
-- `.exe`: mover o `chapters.ini` traduzido para `mods\TLJ_PTBR\` e copiar `_backup_traducao_ptbr\chapters.ini`
-  de volta para a pasta do jogo; depois adicionar a pasta do jogo no ScummVM.
+- Instalador Universal: mover o `chapters.ini` traduzido para `mods\TLJ_PTBR\` e copiar
+  `_backup_traducao_tlj\chapters.ini` de volta para a pasta do jogo; depois adicionar a pasta do jogo no ScummVM.
+  Quem usa o Vortex só para os mods do ScummVM não precisa disso: desde a 0.3.6 a extensão usa o `chapters.ini`
+  original desse backup.
 
 A extensão também instala, arrastando o arquivo baixado para o Vortex, os mods do ScummVM do ModDB: o
 [TLJ HD Mod](https://www.moddb.com/downloads/tljhd) e os FMV Packs (`mods/TLJHD/...`, mais a pasta `Fonts`) e o
@@ -82,7 +92,11 @@ de `mods/` carregados.
 
 ## Como compilar
 
-Windows (usa o `csc.exe` do .NET Framework 4, que já vem no Windows): rode `instalador-windows\compilar.bat`, ou
+Instalador Universal: rode `instalador-universal\Compilar.bat` no Windows (usa o `csc.exe` do .NET Framework 4.x).
+O `Instalador_TLJ.exe` 2.0.0 publicado tem SHA-256
+`deb135fa8534ccd6eda5e437f1b003d0bd6e1e22a1fd73162ea144d394550119`.
+
+Instalador antigo (`instalador-windows/`), Windows (usa o `csc.exe` do .NET Framework 4, que já vem no Windows): rode `instalador-windows\compilar.bat`, ou
 
     %WINDIR%\Microsoft.NET\Framework64\v4.0.30319\csc.exe /target:exe /optimize+ /codepage:65001 /out:Instalar_Traducao_PTBR.exe Instalador.cs
 
@@ -99,9 +113,11 @@ SHA-256: `ce259429ea5bca288d12e415e95eef160e71d9e3332b298f3f559f68bc3bb21e`
 
 Fan translation tools for The Longest Journey (Brazilian Portuguese). The `.tljpatch` file only contains
 translated text, layout tweaks and hashes of the original files; no game files are redistributed. The Windows
-installer is a small open-source .NET Framework 4 console app: it verifies the player's original files, backs
-them up, writes the translated files and can restore the backup. It has no network access and does not run any
-other program. Build it with `instalador-windows/compilar.bat` (uses the C# compiler shipped with Windows).
+Universal Installer (`instalador-universal/`) is a small open-source .NET Framework 4.5 console app: it verifies the
+player's original files, backs them up, writes the translated files (text, videos or audio packages, any language
+in `.tljpatch` format) and can restore the backup. It has no network access and does not run any other program.
+Build it with `instalador-universal/Compilar.bat` (uses the C# compiler shipped with Windows). The Vortex extension
+is in `extensao-vortex/`; the Linux/Steam Deck/Mac script is `python/tlj_ptbr_patcher.py`.
 
 ## Licença
 
